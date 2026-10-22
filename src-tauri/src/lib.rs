@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
 };
@@ -19,6 +19,8 @@ struct PetMenu {
     menu: Menu<Wry>,
     pause: CheckMenuItem<Wry>,
     autostart: CheckMenuItem<Wry>,
+    /// Untermenue mit allen Agenten (auch deaktivierten); der Hub haelt es aktuell.
+    agents: Submenu<Wry>,
 }
 
 const AGENT_PREFIX: &str = "agent-";
@@ -90,6 +92,36 @@ fn close_agent_window(app: AppHandle, id: String) {
     if let Some(window) = app.get_webview_window(&format!("{AGENT_PREFIX}{id}")) {
         let _ = window.destroy();
     }
+}
+
+#[derive(serde::Deserialize)]
+struct AgentEntry {
+    id: String,
+    name: String,
+    visible: bool,
+}
+
+/// Baut das Agenten-Untermenue neu auf: pro Agent ein Haken (an = aktiv). Ein Klick geht als
+/// Ereignis `agent-toggle` an den Hub, der den Agenten ein- oder ausschaltet.
+#[tauri::command]
+fn set_agent_menu(app: AppHandle, agents: Vec<AgentEntry>) -> Result<(), String> {
+    let menu = app.try_state::<PetMenu>().ok_or("Menue noch nicht bereit")?;
+    let err = |e: tauri::Error| e.to_string();
+    for item in menu.agents.items().map_err(err)? {
+        menu.agents.remove(&item).map_err(err)?;
+    }
+    let mut count = 0;
+    for agent in agents.iter().filter(|a| valid_agent_id(&a.id)) {
+        let item = CheckMenuItem::with_id(&app, format!("agent:{}", agent.id), &agent.name, true, agent.visible, None::<&str>)
+            .map_err(err)?;
+        menu.agents.append(&item).map_err(err)?;
+        count += 1;
+    }
+    if count == 0 {
+        let empty = MenuItem::with_id(&app, "no-agents", "Keine Agenten", false, None::<&str>).map_err(err)?;
+        menu.agents.append(&empty).map_err(err)?;
+    }
+    Ok(())
 }
 
 /// Pause-Zustand. Die Fenster laden teils vor `setup`; dann ist noch nicht pausiert.
@@ -201,7 +233,11 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
         }
         "settings" => show_settings(app),
         "quit" => app.exit(0),
-        _ => {}
+        other => {
+            if let Some(agent_id) = other.strip_prefix("agent:") {
+                let _ = app.emit_to("hub", "agent-toggle", agent_id.to_string());
+            }
+        }
     }
 }
 
@@ -229,6 +265,7 @@ pub fn run() {
             open_settings,
             open_agent_window,
             close_agent_window,
+            set_agent_menu,
             get_paused
         ])
         // Das Einstellungsfenster wird nur versteckt, damit es sich wieder oeffnen laesst.
@@ -253,10 +290,11 @@ pub fn run() {
                 autostart_on,
                 None::<&str>,
             )?;
+            let agents = Submenu::with_id(app, "agents", "Agenten", true)?;
             let settings = MenuItem::with_id(app, "settings", "Einstellungen", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>)?;
             let sep = PredefinedMenuItem::separator(app)?;
-            let menu = Menu::with_items(app, &[&toggle, &pause, &autostart, &settings, &sep, &quit])?;
+            let menu = Menu::with_items(app, &[&toggle, &agents, &pause, &autostart, &settings, &sep, &quit])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -275,7 +313,7 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            app.manage(PetMenu { menu, pause, autostart });
+            app.manage(PetMenu { menu, pause, autostart, agents });
 
             // Das Geisterfenster (Zielvorschau beim Ziehen) soll Mausklicks durchlassen.
             if let Some(ghost) = app.get_webview_window("ghost") {

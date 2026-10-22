@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "ghost",
+  "description": "Rechte fuer das Geisterfenster (Zielvorschau): nur Ereignisse empfangen",
+  "windows": ["ghost"],
+  "permissions": [
+    "core:default"
+  ]
+}

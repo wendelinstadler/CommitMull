@@ -1,4 +1,12 @@
+import { Accessory } from "./accessories";
+import { Species } from "./species";
+
 /** Nachrichten zwischen Hub und Agent-Fenstern (Tauri-Events). */
+
+/** Tray-Menue an Hub: Agent ein- oder ausschalten (Nutzlast: Agent-Id). */
+export const EVENT_AGENT_TOGGLE = "agent-toggle";
+/** Agent an Geisterfenster: so soll die Zielvorschau aussehen. */
+export const EVENT_GHOST_LOOK = "ghost-look";
 
 /** Hub an Agent: aktueller Zustand. */
 export const EVENT_AGENT_STATE = "agent-state";
@@ -14,6 +22,10 @@ export const agentLabel = (id: string) => `agent-${id}`;
 export interface AgentStatePayload {
   id: string;
   name: string;
+  species: Species;
+  accessory: Accessory;
+  /** Anzeigename der Rolle, z. B. "Finanzen". */
+  roleLabel: string;
   /** 1 = satt, 0 = leer */
   hunger: number;
 }

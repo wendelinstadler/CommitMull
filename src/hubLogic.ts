@@ -1,14 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen, UnlistenFn } from "@tauri-apps/api/event";
 import {
+  accessoryOf,
   Agent,
   AGENTS_CHANGED,
+  deleteAgentData,
   ensureAgents,
   GithubTracker,
   loadAgentState,
   readAgents,
+  saveAgents,
   saveAgentState,
 } from "./agents";
+import { roleInfo } from "./roles";
 import { pollGithub } from "./githubTracker";
 import {
   AgentCommand,
@@ -18,6 +22,7 @@ import {
   EVENT_AGENT_CMD,
   EVENT_AGENT_FED,
   EVENT_AGENT_STATE,
+  EVENT_AGENT_TOGGLE,
 } from "./protocol";
 import { DEFAULT_SETTINGS, loadSettings, SETTINGS_CHANGED } from "./settings";
 
@@ -38,7 +43,7 @@ export function startHub(): () => void {
   let hungerHours = DEFAULT_SETTINGS.hungerHours;
   let agents: Agent[] = [];
   const hunger = new Map<string, number>();
-  const pollTimers = new Map<string, number>();
+  const pollTimers = new Map<string, { timer: number; config: string }>();
   const polling = new Set<string>();
   const unlisteners: UnlistenFn[] = [];
   let lastTick = Date.now();
@@ -46,7 +51,14 @@ export function startHub(): () => void {
   const find = (id: string) => agents.find((a) => a.id === id);
 
   const sendState = (agent: Agent) => {
-    const payload: AgentStatePayload = { id: agent.id, name: agent.name, hunger: hunger.get(agent.id) ?? 1 };
+    const payload: AgentStatePayload = {
+      id: agent.id,
+      name: agent.name,
+      species: agent.species,
+      accessory: accessoryOf(agent),
+      roleLabel: roleInfo(agent.role).label,
+      hunger: hunger.get(agent.id) ?? 1,
+    };
     emitTo(agentLabel(agent.id), EVENT_AGENT_STATE, payload).catch(() => {});
   };
 
@@ -66,7 +78,7 @@ export function startHub(): () => void {
   const poll = async (id: string) => {
     const agent = find(id);
     const tracker = agent && githubOf(agent);
-    if (!agent || !tracker || polling.has(id)) return;
+    if (!agent || !tracker || !tracker.user.trim() || polling.has(id)) return;
     polling.add(id);
     try {
       const { fresh, today } = await pollGithub(id, tracker);
@@ -80,15 +92,34 @@ export function startHub(): () => void {
     }
   };
 
-  const restartPolling = () => {
-    pollTimers.forEach((t) => window.clearInterval(t));
-    pollTimers.clear();
+  /** Startet Abfragen nur neu, wenn sich die Tracker-Angaben eines Agenten geaendert haben (spart Anfragen). */
+  const syncPolling = () => {
+    for (const [id, entry] of [...pollTimers]) {
+      const tracker = find(id) && githubOf(find(id)!);
+      if (!tracker || JSON.stringify(tracker) !== entry.config) {
+        window.clearInterval(entry.timer);
+        pollTimers.delete(id);
+      }
+    }
     for (const agent of agents) {
       const tracker = githubOf(agent);
-      if (!tracker) continue;
+      if (!tracker || pollTimers.has(agent.id)) continue;
       poll(agent.id);
-      pollTimers.set(agent.id, window.setInterval(() => poll(agent.id), tracker.pollMinutes * 60 * 1000));
+      pollTimers.set(agent.id, {
+        timer: window.setInterval(() => poll(agent.id), tracker.pollMinutes * 60 * 1000),
+        config: JSON.stringify(tracker),
+      });
     }
+  };
+
+  /** Tray-Menue: alle Agenten mit Haken, auch die deaktivierten. */
+  const syncMenu = (attempt = 0) => {
+    const entries = agents.map((a) => ({ id: a.id, name: a.name, visible: a.visible }));
+    invoke("set_agent_menu", { agents: entries }).catch((e) => {
+      // Beim Start ist das Menue eventuell noch nicht gebaut.
+      if (attempt < 5 && alive) window.setTimeout(() => syncMenu(attempt + 1), 1000);
+      else console.warn("Menue fehlgeschlagen:", e);
+    });
   };
 
   const applyAgents = async (list: Agent[]) => {
@@ -98,7 +129,11 @@ export function startHub(): () => void {
       if (!hunger.has(agent.id)) hunger.set(agent.id, (await loadAgentState(agent.id)).hunger);
     }
     if (!alive) return;
-    for (const agent of removed) invoke("close_agent_window", { id: agent.id }).catch(() => {});
+    for (const agent of removed) {
+      invoke("close_agent_window", { id: agent.id }).catch(() => {});
+      hunger.delete(agent.id);
+      deleteAgentData(agent.id).catch((e) => console.warn("Aufraeumen fehlgeschlagen:", e));
+    }
     for (const agent of list) {
       if (agent.visible) {
         invoke("open_agent_window", { id: agent.id }).catch((e) => console.warn("Fenster fehlgeschlagen:", e));
@@ -107,7 +142,8 @@ export function startHub(): () => void {
         invoke("close_agent_window", { id: agent.id }).catch(() => {});
       }
     }
-    restartPolling();
+    syncPolling();
+    syncMenu();
   };
 
   const onCommand = (cmd: AgentCommand) => {
@@ -138,6 +174,10 @@ export function startHub(): () => void {
   subscribe<null>(SETTINGS_CHANGED, () => {
     loadSettings().then((s) => (hungerHours = s.hungerHours));
   });
+  subscribe<string>(EVENT_AGENT_TOGGLE, (id) => {
+    const agent = find(id);
+    if (agent) saveAgents(agents.map((a) => (a.id === id ? { ...a, visible: !a.visible } : a)));
+  });
   subscribe<null>(AGENTS_CHANGED, () => {
     readAgents().then((list) => {
       if (alive) applyAgents(list);
@@ -151,6 +191,8 @@ export function startHub(): () => void {
     lastTick = now;
     if (paused) return;
     for (const agent of agents) {
+      // Deaktivierte Agenten bleiben satt, bis sie wieder eingeschaltet werden.
+      if (!agent.visible) continue;
       setHunger(agent.id, (hunger.get(agent.id) ?? 1) - elapsed / (hungerHours * 60 * 60 * 1000));
     }
   }, TICK_MS);
@@ -165,7 +207,7 @@ export function startHub(): () => void {
   return () => {
     alive = false;
     window.clearInterval(tickTimer);
-    pollTimers.forEach((t) => window.clearInterval(t));
+    pollTimers.forEach((entry) => window.clearInterval(entry.timer));
     unlisteners.forEach((un) => un());
   };
 }

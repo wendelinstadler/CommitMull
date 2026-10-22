@@ -67,8 +67,14 @@ body,
 }
 
 .panel-title {
-  margin-bottom: 6px;
   font-weight: 700;
+  text-align: center;
+}
+
+.panel-subtitle {
+  margin-bottom: 6px;
+  color: #6b4a52;
+  font-size: 11px;
   text-align: center;
 }
 

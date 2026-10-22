@@ -12,6 +12,7 @@ import {
   EVENT_AGENT_CMD,
   EVENT_AGENT_FED,
   EVENT_AGENT_STATE,
+  EVENT_GHOST_LOOK,
   HUB_LABEL,
 } from "./protocol";
 import { PetState } from "./sprites";
@@ -29,7 +30,7 @@ interface Props {
 
 /** Fenster eines Agenten: zeigt das Tier an und meldet Eingaben; die Logik liegt im Hub. */
 export function AgentWindow({ id }: Props) {
-  const [info, setInfo] = useState<{ name: string; hunger: number } | null>(null);
+  const [info, setInfo] = useState<AgentStatePayload | null>(null);
   const [paused, setPaused] = useState(false);
   const [override, setOverride] = useState<PetState | null>(null);
   const [bubble, setBubble] = useState<string | null>(null);
@@ -79,7 +80,7 @@ export function AgentWindow({ id }: Props) {
     let alive = true;
     const unlisteners = Promise.all([
       listen<AgentStatePayload>(EVENT_AGENT_STATE, (e) => {
-        if (e.payload.id === id) setInfo({ name: e.payload.name, hunger: e.payload.hunger });
+        if (e.payload.id === id) setInfo(e.payload);
       }),
       listen<AgentFedPayload>(EVENT_AGENT_FED, (e) => {
         eatRef.current();
@@ -138,6 +139,7 @@ export function AgentWindow({ id }: Props) {
     ghost.current.measure = null;
     measureWindow().then((m) => (ghost.current.measure = m));
     Window.getByLabel("ghost").then((w) => (ghost.current.win = w));
+    if (info) emitTo("ghost", EVENT_GHOST_LOOK, { species: info.species, accessory: info.accessory }).catch(() => {});
     press.current = { x: e.screenX, y: e.screenY, dragging: false };
   };
 
@@ -206,6 +208,7 @@ export function AgentWindow({ id }: Props) {
       {panelOpen && (
         <Panel
           name={info.name}
+          subtitle={info.roleLabel}
           hunger={hunger}
           mood={mood}
           paused={paused}
@@ -217,7 +220,7 @@ export function AgentWindow({ id }: Props) {
           onFeed={import.meta.env.DEV ? () => command({ id, type: "dev-feed" }) : undefined}
         />
       )}
-      <Pet state={state} facing={facing} />
+      <Pet species={info.species} accessory={info.accessory} state={state} facing={facing} />
     </div>
   );
 }

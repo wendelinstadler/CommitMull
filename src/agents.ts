@@ -1,8 +1,11 @@
 import { emit } from "@tauri-apps/api/event";
+import { Accessory } from "./accessories";
+import { Role, roleInfo } from "./roles";
+import { Species } from "./species";
 import { getStore, saveValue } from "./store";
 
-export type Species = "naked-mole-rat";
-export type Role = "dev";
+export type { Role } from "./roles";
+export type { Species } from "./species";
 
 export interface GithubTracker {
   type: "github";
@@ -23,8 +26,29 @@ export interface Agent {
   name: string;
   species: Species;
   role: Role;
+  /** Nur bei der Rolle "custom": frei gewaehltes Accessoire. */
+  accessory?: Accessory;
   trackers: Tracker[];
+  /** false = deaktiviert: kein Fenster, Hunger steht still; bleibt im Menue zum Wiedereinschalten. */
   visible: boolean;
+}
+
+/** Accessoire, das ein Agent traegt: das der Rolle, bei "Eigene" das gewaehlte. */
+export const accessoryOf = (agent: Agent): Accessory =>
+  agent.role === "custom" ? agent.accessory ?? "none" : roleInfo(agent.role).accessory;
+
+/** Neuer Agent mit den Vorgaben seiner Rolle. */
+export function createAgent(name: string, species: Species, role: Role): Agent {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "agent";
+  const github: GithubTracker = { type: "github", user: "", token: "", pollMinutes: 10, foodPercent: 25 };
+  return {
+    id: `${slug}-${Date.now().toString(36)}`,
+    name,
+    species,
+    role,
+    trackers: roleInfo(role).github ? [github] : [],
+    visible: true,
+  };
 }
 
 export interface AgentState {
@@ -55,6 +79,14 @@ export async function loadAgentState(id: string): Promise<AgentState> {
 
 export async function saveAgentState(id: string, state: AgentState) {
   await saveValue(stateKey(id), state);
+}
+
+/** Loescht den gespeicherten Zustand eines Agenten (nach dem Loeschen des Agenten; nur der Hub ruft das auf). */
+export async function deleteAgentData(id: string) {
+  const store = await getStore();
+  await store.delete(stateKey(id));
+  await store.delete(trackerKey(id, "github"));
+  await store.save();
 }
 
 interface LegacySettings {

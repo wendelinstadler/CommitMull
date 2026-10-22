@@ -6,7 +6,7 @@ Das Tier stirbt nie. Wenn es lange nichts zu fressen gibt, wird es nur traurig.
 
 ## Stand
 
-Schritt 5 (Umbau auf Agent-Fenster und Hub) ist im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
+Schritt 6 (Agenten-Verwaltung) und 7 (Tierarten und Rollen) sind im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
 
 Funktioniert:
 - Transparentes, rahmenloses Fenster, immer im Vordergrund, nicht in der Taskleiste
@@ -19,10 +19,16 @@ Funktioniert:
 - Tray-Icon mit Menue (dasselbe Menue per Rechtsklick auf das Tier)
 - Globaler Hotkey `Ctrl+Shift+P` blendet das Tier ein und aus
 - Autostart mit Windows (schaltbar)
-- Einstellungsfenster (Panel, Tray-Menue oder Rechtsklick): GitHub-Benutzername und -Token, Abfrage-Intervall, Futter pro Commit, Hunger-Dauer, Hotkey; Aenderungen gelten sofort
-- GitHub-Anbindung: alle 10 Minuten werden neue Pushes von `wendelinstadler` abgefragt; jeder neue Commit bringt 25 % Futter, dazu eine Sprechblase "N Commits heute!"
+- Mehrere Agenten, je ein eigenes Fenster mit eigenem Hunger und eigener Futterquelle
+- Agenten-Verwaltung (Panel, Tray-Menue oder Rechtsklick auf "Einstellungen"): Agent anlegen, Name, Tierart und Rolle waehlen, deaktivieren, loeschen; GitHub-Benutzername, -Token, Intervall und Futter pro Commit je Agent; global Hunger-Dauer und Hotkey
+- Deaktivierte Agenten haben kein Fenster und werden nicht hungriger, bleiben aber im Tray-Menue unter "Agenten" und lassen sich dort wieder einschalten
+- Tierarten: Nacktmull, Katze, Hund, Echse, Schlange, Vogel, Maulwurf (je Vorder- und Seitenansicht, alle Animationen)
+- Rollen mit Accessoire: Informatiker (Laptop), Finanzen (Whiteboard mit Graph), Lernen (Buch), Fitness (Hantel), Gewohnheiten (Checkliste), Eigene (Accessoire frei)
+- GitHub-Anbindung: neue Pushes des eingetragenen Benutzers werden abgefragt (Standard alle 10 Minuten); jeder neue Commit bringt 25 % Futter, dazu eine Sprechblase "N Commits heute!"
 
 Noch nicht gebaut:
+- Manuelle Eintraege, Fokus-Timer, Finanz-Budget (Schritt 8)
+- Schlafmodus und Nest (Schritt 9), gespeicherte Seiten und Terminal-Befehle (Schritt 10)
 - Laufen auf Fensterkanten (Schritt 11)
 - Installer und Release (Schritt 12)
 
@@ -70,6 +76,8 @@ Nur im Dev-Modus, das Fenster braucht dafuer den Fokus (einmal anklicken):
 | `H` | Hunger um 20 % senken |
 | `G` | GitHub sofort abfragen |
 
+Dazu im Dev-Modus: `http://localhost:1420/?sheet` im Browser zeigt alle Arten, Animationen und Accessoires nebeneinander (zum Justieren der Sprites).
+
 ## Aufbau
 
 Jedes Tier ("Agent") hat ein eigenes kleines Fenster. Die ganze Logik laeuft in einem unsichtbaren Hub-Fenster;
@@ -83,7 +91,12 @@ src/
   AgentWindow.tsx   Fenster eines Tiers: Klick, Ziehen, Laufen, Panel, Vorschau
   Pet.tsx           Canvas, spielt die Animationen ab
   Panel.tsx         Status-Panel
-  SettingsWindow.tsx  Einstellungsfenster
+  SettingsWindow.tsx  Agenten-Verwaltung und globale Einstellungen
+  roles.ts          Rollen (Vorlagen) mit Accessoire und Standard-Tracker
+  species.ts        Tierarten: Paletten, Formen, Ankerpunkte
+  accessories.ts    Accessoires als Ueberlagerung
+  draw.ts           Zeichenhilfen und gemeinsame Typen
+  Sheet.tsx         Dev-Ansicht aller Sprites (?sheet)
   Ghost.tsx         halbtransparente Zielvorschau beim Ziehen
   agents.ts         Agentenmodell, Speicher, Migration vom alten Einzel-Mull
   settings.ts       globale Einstellungen (Hotkey, Hunger-Dauer)
@@ -92,7 +105,7 @@ src/
   githubTracker.ts  GitHub abfragen, neue Commits erkennen
   github.ts         GitHub-API (Events, Vergleich)
   store.ts          gespeicherter Zustand
-  sprites.ts        Nacktmull als 64x64-Pixelzeichnung samt Frames
+  sprites.ts        Posen und Animationen, setzt Art und Accessoire zusammen (64x64)
 src-tauri/
   src/lib.rs        Tray, Menue, Hotkey, Autostart, Agent-Fenster, Befehle
 ```

@@ -3,12 +3,14 @@ import ReactDOM from "react-dom/client";
 import { AgentWindow } from "./AgentWindow";
 import { Hub } from "./Hub";
 import { Ghost } from "./Ghost";
+import { Sheet } from "./Sheet";
 import { SettingsWindow } from "./SettingsWindow";
 import "./styles.css";
 
 /** Dieselbe Seite dient allen Fenstern; der Query-Parameter waehlt die Ansicht. */
 function view() {
   const params = new URLSearchParams(window.location.search);
+  if (import.meta.env.DEV && params.has("sheet")) return <Sheet />;
   if (params.has("ghost")) return <Ghost />;
   if (params.has("settings")) return <SettingsWindow />;
   if (params.has("hub")) return <Hub />;

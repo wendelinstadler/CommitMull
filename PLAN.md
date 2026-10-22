@@ -80,9 +80,9 @@ Hunger und GitHub-Zustand wandern in die neuen Schluessel. Die alten Schluessel 
 2. Zustand + Verhalten: Hunger, Stimmung, Panel, Laufen per Ziehen  (fertig)
 3. GitHub: Commits als Futter  (fertig)
 4. Einstellungsfenster (global: Hotkey, Token, Intervall, Hunger, Futter)  (fertig; wird zur Basis der Verwaltung)
-5. Umbau: Hub und Agent-Fenster, Datenmodell, Migration. Aussehen unveraendert, ein Agent.  (im Test)
-6. Agenten-Verwaltung: anlegen, bearbeiten, ausblenden, loeschen, Name und Art waehlen (zunaechst nur Nacktmull)
-7. Sprite-System: Arten (in Gruppen) und Rollen mit Accessoires
+5. Umbau: Hub und Agent-Fenster, Datenmodell, Migration. Aussehen unveraendert, ein Agent.  (fertig)
+6. Agenten-Verwaltung: anlegen, bearbeiten, deaktivieren (bleibt im Tray-Menue), loeschen, Name, Art und Rolle waehlen  (im Test)
+7. Sprite-System: 7 Arten (Vierbeiner als Daten, Vogel und Schlange eigene Zeichner) und 6 Rollen mit Accessoires  (im Test, Feinschliff nach Blick auf die Sprites)
 8. Tracker-System: GitHub portiert, manuelles Eintragen, Fokus-Timer; Finanz-Whiteboard und Budget
 9. Schlafmodus + Nest, "Alle schlafen" per Tray und Hotkey
 10. Aktionen: gespeicherte Seiten, Terminal-Befehle mit Bestaetigung
