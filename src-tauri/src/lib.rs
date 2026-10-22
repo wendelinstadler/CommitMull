@@ -151,6 +151,11 @@ pub fn run() {
 
             place_bottom_right(app.handle());
 
+            // Das Geisterfenster (Zielvorschau beim Ziehen) soll Mausklicks durchlassen.
+            if let Some(ghost) = app.get_webview_window("ghost") {
+                let _ = ghost.set_ignore_cursor_events(true);
+            }
+
             let hotkey = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyP);
             if let Err(e) = app.global_shortcut().register(hotkey) {
                 eprintln!("Hotkey Ctrl+Shift+P konnte nicht registriert werden: {e}");

@@ -77,6 +77,45 @@ const STEP_MS = 50;
 /** Lauftempo in logischen Pixeln pro Sekunde. */
 const WALK_SPEED = 45;
 
+export interface WindowMeasure {
+  area: { position: { x: number; y: number }; size: { width: number; height: number } };
+  pos: { x: number; y: number };
+  size: { width: number; height: number };
+  scale: number;
+}
+
+/** Misst Fenster und Arbeitsbereich des Monitors, auf dem das Fenster liegt (physische Pixel). */
+export async function measureWindow(): Promise<WindowMeasure | null> {
+  const win = getCurrentWindow();
+  const [monitor, pos, size, scale] = await Promise.all([
+    currentMonitor(),
+    win.outerPosition(),
+    win.outerSize(),
+    win.scaleFactor(),
+  ]);
+  return monitor ? { area: monitor.workArea, pos, size, scale } : null;
+}
+
+/**
+ * Fensterposition (physisch), bei der die Fuesse des Tiers am Bildschirmpunkt screenX/screenY
+ * (CSS-Pixel) stehen. Das Tier steht mittig unten im Fenster.
+ */
+export function aimTarget(m: WindowMeasure, screenX: number, screenY: number) {
+  const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+  return {
+    x: clamp(
+      Math.round(screenX * m.scale - m.size.width / 2),
+      m.area.position.x,
+      m.area.position.x + m.area.size.width - m.size.width,
+    ),
+    y: clamp(
+      Math.round(screenY * m.scale - m.size.height),
+      m.area.position.y,
+      m.area.position.y + m.area.size.height - m.size.height,
+    ),
+  };
+}
+
 /**
  * Laesst das Fenster ueber den Bildschirm zu einem Ziel laufen (walkTo).
  * Mit enabled = false bricht ein laufender Gang ab (Pause, Panel offen, Fressen ...).
@@ -106,27 +145,10 @@ export function useWalker(enabled: boolean) {
       stop();
       const token = run.current;
       const win = getCurrentWindow();
-      const [monitor, pos, size, scale] = await Promise.all([
-        currentMonitor(),
-        win.outerPosition(),
-        win.outerSize(),
-        win.scaleFactor(),
-      ]);
-      if (token !== run.current || !monitor) return;
-
-      const area = monitor.workArea;
-      const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
-      const targetX = clamp(
-        Math.round(screenX * scale - size.width / 2),
-        area.position.x,
-        area.position.x + area.size.width - size.width,
-      );
-      // Das Tier steht unten im Fenster, die Fenster-Unterkante liegt also bei den Fuessen.
-      const targetY = clamp(
-        Math.round(screenY * scale - size.height),
-        area.position.y,
-        area.position.y + area.size.height - size.height,
-      );
+      const m = await measureWindow();
+      if (token !== run.current || !m) return;
+      const { pos, scale } = m;
+      const { x: targetX, y: targetY } = aimTarget(m, screenX, screenY);
 
       let x = pos.x;
       let y = pos.y;

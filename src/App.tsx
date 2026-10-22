@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow, PhysicalPosition, PhysicalSize, Window } from "@tauri-apps/api/window";
 import { Pet } from "./Pet";
 import { Panel } from "./Panel";
-import { moodOf, useHunger, useWalker } from "./behavior";
+import { aimTarget, measureWindow, moodOf, useHunger, useWalker, WindowMeasure } from "./behavior";
 import { PetState } from "./sprites";
 
 const DRAG_THRESHOLD = 4;
@@ -23,6 +23,12 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [autostart, setAutostart] = useState(false);
   const bubbleTimer = useRef<number | undefined>(undefined);
+  /** Geisterfenster: halbtransparente Vorschau, wo das Tier landet, waehrend man zieht. */
+  const ghost = useRef<{ win: Window | null; measure: WindowMeasure | null; active: boolean }>({
+    win: null,
+    measure: null,
+    active: false,
+  });
   const press = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
 
   const { hunger, feed } = useHunger(paused);
@@ -94,36 +100,56 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const onMouseDown = (e: React.MouseEvent) => {
+  const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     stop();
+    // Capture: Bewegung und Loslassen kommen auch an, wenn die Maus das kleine Fenster verlaesst.
+    e.currentTarget.setPointerCapture(e.pointerId);
+    ghost.current.measure = null;
+    measureWindow().then((m) => (ghost.current.measure = m));
+    Window.getByLabel("ghost").then((w) => (ghost.current.win = w));
     press.current = { x: e.screenX, y: e.screenY, dragging: false };
   };
 
-  // Maus- und Loslass-Ereignisse am Fenster, damit auch ein Loslassen ausserhalb des Fensters ankommt.
   const canWalkRef = useRef(canWalk);
   canWalkRef.current = canWalk;
   const walkToRef = useRef(walkTo);
   walkToRef.current = walkTo;
   useEffect(() => {
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       const p = press.current;
       if (p && !p.dragging && Math.hypot(e.screenX - p.x, e.screenY - p.y) > DRAG_THRESHOLD) {
         p.dragging = true;
       }
+      const g = ghost.current;
+      if (p?.dragging && canWalkRef.current && g.win && g.measure) {
+        const t = aimTarget(g.measure, e.screenX, e.screenY);
+        const win = g.win;
+        g.active = true;
+        // Nach dem Loslassen (active = false) darf ein noch laufender Aufruf nicht mehr einblenden.
+        win
+          .setPosition(new PhysicalPosition(t.x, t.y))
+          .then(() => (g.active ? win.show() : undefined))
+          .catch(() => {});
+      }
     };
-    const onUp = (e: MouseEvent) => {
+    const onUp = (e: PointerEvent) => {
       const p = press.current;
       press.current = null;
+      const g = ghost.current;
+      g.active = false;
+      g.win?.hide().catch(() => {});
       if (!p || e.button !== 0) return;
       if (!p.dragging) setPanelOpen((open) => !open);
       else if (canWalkRef.current) walkToRef.current(e.screenX, e.screenY);
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
     };
   }, []);
 
@@ -137,7 +163,7 @@ export default function App() {
   return (
     <div
       className="stage"
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       onContextMenu={(e) => {
         e.preventDefault();
         invoke("show_pet_menu");

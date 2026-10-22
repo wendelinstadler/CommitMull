@@ -20,8 +20,6 @@ body,
 }
 
 .pet {
-  width: 128px;
-  height: 128px;
   image-rendering: pixelated;
   cursor: grab;
 }
@@ -128,4 +126,8 @@ body,
 
 .panel-buttons button.danger {
   background: #f7d4d1;
+}
+
+.ghost .pet {
+  cursor: default;
 }

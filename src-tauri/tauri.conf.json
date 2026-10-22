@@ -25,6 +25,23 @@
         "shadow": false,
         "maximizable": false,
         "minimizable": false
+      },
+      {
+        "label": "ghost",
+        "title": "CommitMull Vorschau",
+        "url": "index.html?ghost",
+        "width": 170,
+        "height": 190,
+        "visible": false,
+        "focus": false,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "maximizable": false,
+        "minimizable": false
       }
     ],
     "security": {

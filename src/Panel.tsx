@@ -33,7 +33,7 @@ export function Panel({
   const percent = Math.round(hunger * 100);
 
   return (
-    <div className="panel" onMouseDown={(e) => e.stopPropagation()} onMouseUp={(e) => e.stopPropagation()}>
+    <div className="panel" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
       <div className="panel-title">CommitMull</div>
 
       <div className="panel-row">
