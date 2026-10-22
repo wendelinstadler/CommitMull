@@ -79,17 +79,40 @@ Hunger und GitHub-Zustand wandern in die neuen Schluessel. Die alten Schluessel 
 1. Fenster + Sprite + Tray-Menue + Hotkey + Autostart  (fertig)
 2. Zustand + Verhalten: Hunger, Stimmung, Panel, Laufen per Ziehen  (fertig)
 3. GitHub: Commits als Futter  (fertig)
-4. Einstellungsfenster (global: Hotkey, Token, Intervall, Hunger, Futter)  (fertig; wird zur Basis der Verwaltung)
+4. Einstellungsfenster (global: Hotkey, Token, Intervall, Hunger, Futter)  (fertig; wurde zur Basis der Verwaltung)
 5. Umbau: Hub und Agent-Fenster, Datenmodell, Migration. Aussehen unveraendert, ein Agent.  (fertig)
 6. Agenten-Verwaltung: anlegen, bearbeiten, deaktivieren (bleibt im Tray-Menue), loeschen, Name, Art und Rolle waehlen  (im Test)
-7. Sprite-System: 7 Arten (Vierbeiner als Daten, Vogel und Schlange eigene Zeichner) und 6 Rollen mit Accessoires  (im Test, Feinschliff nach Blick auf die Sprites)
-8. Tracker-System: GitHub portiert, manuelles Eintragen, Fokus-Timer; Finanz-Whiteboard und Budget
-9. Schlafmodus + Nest, "Alle schlafen" per Tray und Hotkey
-10. Aktionen: gespeicherte Seiten, Terminal-Befehle mit Bestaetigung
-11. Fensterkanten (WinAPI EnumWindows), faellt runter, wenn das Fenster verschwindet
-12. Release: Installer bauen, GitHub-Release
+7. Sprite-System: 7 Arten (Vierbeiner als Daten, Vogel und Schlange eigene Zeichner) und 6 Rollen mit Accessoires  (im Test)
+8. Hauptfenster als Startseite der App: alle Tiere als Karten mit Schalter, "Neues Tier", "Bearbeiten"  (im Test)
+9. Tracker-System: GitHub portiert, manuelles Eintragen, Fokus-Timer; Finanz-Whiteboard und Budget
+10. Schlafmodus + Nest, "Alle schlafen" per Tray und Hotkey
+11. Aktionen: gespeicherte Seiten, Terminal-Befehle mit Bestaetigung
+12. Pakete: Tiere und Agenten als Datei exportieren und importieren, mit strenger Pruefung (siehe unten)
+13. Fensterkanten (WinAPI EnumWindows), faellt runter, wenn das Fenster verschwindet
+14. Release: Installer bauen, GitHub-Release
+15. Spaeter, eigenes Projekt: Online-Marktplatz auf Basis der Pakete (Konten, Hochladen, Pruefung, Meldefunktion)
 
 Nach jedem Schritt laeuft `npm run tauri dev`, README.md wird nachgezogen, dann Pause zum Testen.
+
+## Hauptfenster (Schritt 8)
+Die App hat eine Startseite (Fenster `home`): Karten aller Tiere mit Bild, Name, Rolle und einem Schalter (aktiv/deaktiviert),
+"Bearbeiten" oeffnet die Verwaltung beim jeweiligen Tier, "Neues Tier" legt eines an. Schliessen versteckt das Fenster,
+die App lebt im Tray weiter ("Tiere verwalten" oeffnet es wieder). Beim Start mit Windows (Argument `--autostart`) bleibt es zu.
+
+## Pakete und Marktplatz (Schritt 12, spaeter 15)
+Ziel: Eigene Tiere und Agenten (z. B. ein Kunst-Agent) teilen, ohne dass ein Paket Schaden anrichten kann.
+Entscheidung: Pakete enthalten **nur Daten, nie Code**.
+- Format: Zip mit `pack.json` plus PNG-Bildern fuer Sprites (Endung z. B. `.cmpack`). Inhalt: Tierart (Farben, Bilder je Animation),
+  Rolle (Name, Accessoire-Bild), Agent-Vorlage (Name, Art, Rolle, Einstellungen fuer **vorhandene** Tracker).
+  Keine Befehle, keine Links, keine Skripte, keine ausfuehrbaren Dateien.
+- Pruefung in Rust vor dem Laden, alles nach dem Prinzip "nur Erlaubtes": Groessenlimits (Zip, Eintraege, entpackte Groesse,
+  Kompressionsfaktor gegen Zip-Bomben), nur `.json` und `.png`, keine Pfade mit `..`, absolute Pfade oder Symlinks,
+  `pack.json` gegen ein festes Schema (unbekannte Felder abgelehnt, Textlaengen und Zeichen begrenzt),
+  PNGs werden dekodiert und muessen die erwartete Groesse haben (64x64 je Bild), Tracker nur aus der eingebauten Liste.
+- Vor dem Installieren zeigt die App eine Vorschau (Name, Autor, Inhalt, animiertes Tier) und fragt nach; Pakete lassen sich wieder entfernen.
+- Pakete werden nur als Daten gezeichnet (der gemeinsame Sprite-Zeichner liest Bilder und Farben), sie koennen nichts ausfuehren.
+- Online-Marktplatz (Schritt 15): eigener Server, Konten, Pruefung vor Veroeffentlichung, Pruefsumme je Paket,
+  Meldefunktion. Die App laedt dort nur Pakete, die durch dieselbe lokale Pruefung gehen.
 
 ## Dev-Tasten (geplant)
 `1`-`5` Animation, `0` Automatik, `F` Futter, `H` Hunger senken, `G` GitHub abfragen (bestehend);

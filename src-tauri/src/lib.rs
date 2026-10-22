@@ -177,6 +177,19 @@ fn show_settings(app: &AppHandle) {
     }
 }
 
+/// Zeigt das Hauptfenster (Startseite: alle Tiere mit Schalter).
+fn show_home(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("home") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+#[tauri::command]
+fn open_home(app: AppHandle) {
+    show_home(&app);
+}
+
 #[tauri::command]
 fn open_settings(app: AppHandle) {
     show_settings(&app);
@@ -231,6 +244,7 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
                 let _ = state.autostart.set_checked(!wanted);
             }
         }
+        "home" => show_home(app),
         "settings" => show_settings(app),
         "quit" => app.exit(0),
         other => {
@@ -245,7 +259,7 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -263,14 +277,15 @@ pub fn run() {
             quit_app,
             set_hotkey,
             open_settings,
+            open_home,
             open_agent_window,
             close_agent_window,
             set_agent_menu,
             get_paused
         ])
-        // Das Einstellungsfenster wird nur versteckt, damit es sich wieder oeffnen laesst.
+        // Hauptfenster und Einstellungsfenster werden nur versteckt: die App lebt im Tray weiter.
         .on_window_event(|window, event| {
-            if window.label() == "settings" {
+            if window.label() == "settings" || window.label() == "home" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
@@ -291,10 +306,11 @@ pub fn run() {
                 None::<&str>,
             )?;
             let agents = Submenu::with_id(app, "agents", "Agenten", true)?;
+            let home = MenuItem::with_id(app, "home", "Tiere verwalten", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Einstellungen", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>)?;
             let sep = PredefinedMenuItem::separator(app)?;
-            let menu = Menu::with_items(app, &[&toggle, &agents, &pause, &autostart, &settings, &sep, &quit])?;
+            let menu = Menu::with_items(app, &[&home, &toggle, &agents, &pause, &autostart, &settings, &sep, &quit])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -318,6 +334,11 @@ pub fn run() {
             // Das Geisterfenster (Zielvorschau beim Ziehen) soll Mausklicks durchlassen.
             if let Some(ghost) = app.get_webview_window("ghost") {
                 let _ = ghost.set_ignore_cursor_events(true);
+            }
+
+            // Beim Start mit Windows (Autostart) bleibt das Hauptfenster zu, die Tiere erscheinen direkt.
+            if !std::env::args().any(|a| a == "--autostart") {
+                show_home(app.handle());
             }
 
             app.manage(Hotkey(Mutex::new(None)));

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -52,20 +52,31 @@ export function SettingsWindow() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Vom Hauptfenster gewuenscht: Agent-Id oder "new" (neuen Agenten anlegen), gilt fuer das naechste Laden. */
+  const pending = useRef<string | null>(null);
 
   // Beim Oeffnen (Fenster wird nur versteckt) immer den gespeicherten Stand zeigen.
   useEffect(() => {
     const reload = () => {
       loadSettings().then(setGlobals);
       readAgents().then((list) => {
-        setAgents(list);
-        setSelected(list[0]?.id ?? GENERAL);
+        const want = pending.current;
+        pending.current = null;
+        if (want === "new") {
+          const fresh = createAgent("Neuer Agent", "cat", "custom");
+          setAgents([...list, fresh]);
+          setSelected(fresh.id);
+        } else {
+          setAgents(list);
+          setSelected(list.find((a) => a.id === want)?.id ?? list[0]?.id ?? GENERAL);
+        }
       });
       setConfirmDelete(false);
       setMessage(null);
     };
     reload();
     const unlistenOpen = listen("settings-opened", reload);
+    const unlistenSelect = listen<string>("settings-select", (e) => (pending.current = e.payload));
     // Schaltet jemand einen Agenten im Tray-Menue um, folgt der Entwurf, damit Speichern es nicht rueckgaengig macht.
     const unlistenChanged = listen(AGENTS_CHANGED, () => {
       readAgents().then((stored) =>
@@ -74,6 +85,7 @@ export function SettingsWindow() {
     });
     return () => {
       unlistenOpen.then((f) => f());
+      unlistenSelect.then((f) => f());
       unlistenChanged.then((f) => f());
     };
   }, []);

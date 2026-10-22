@@ -6,7 +6,7 @@ Das Tier stirbt nie. Wenn es lange nichts zu fressen gibt, wird es nur traurig.
 
 ## Stand
 
-Schritt 6 (Agenten-Verwaltung) und 7 (Tierarten und Rollen) sind im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
+Schritt 6 bis 8 (Agenten-Verwaltung, Tierarten und Rollen, Hauptfenster) sind im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
 
 Funktioniert:
 - Transparentes, rahmenloses Fenster, immer im Vordergrund, nicht in der Taskleiste
@@ -19,6 +19,7 @@ Funktioniert:
 - Tray-Icon mit Menue (dasselbe Menue per Rechtsklick auf das Tier)
 - Globaler Hotkey `Ctrl+Shift+P` blendet das Tier ein und aus
 - Autostart mit Windows (schaltbar)
+- Hauptfenster als Startseite: alle Tiere als Karten, Schalter zum Aktivieren, "Neues Tier", "Bearbeiten"; Schliessen schickt die App ins Tray ("Tiere verwalten" im Tray-Menue oeffnet es wieder), beim Start mit Windows bleibt es zu
 - Mehrere Agenten, je ein eigenes Fenster mit eigenem Hunger und eigener Futterquelle
 - Agenten-Verwaltung (Panel, Tray-Menue oder Rechtsklick auf "Einstellungen"): Agent anlegen, Name, Tierart und Rolle waehlen, deaktivieren, loeschen; GitHub-Benutzername, -Token, Intervall und Futter pro Commit je Agent; global Hunger-Dauer und Hotkey
 - Deaktivierte Agenten haben kein Fenster und werden nicht hungriger, bleiben aber im Tray-Menue unter "Agenten" und lassen sich dort wieder einschalten
@@ -27,10 +28,11 @@ Funktioniert:
 - GitHub-Anbindung: neue Pushes des eingetragenen Benutzers werden abgefragt (Standard alle 10 Minuten); jeder neue Commit bringt 25 % Futter, dazu eine Sprechblase "N Commits heute!"
 
 Noch nicht gebaut:
-- Manuelle Eintraege, Fokus-Timer, Finanz-Budget (Schritt 8)
-- Schlafmodus und Nest (Schritt 9), gespeicherte Seiten und Terminal-Befehle (Schritt 10)
-- Laufen auf Fensterkanten (Schritt 11)
-- Installer und Release (Schritt 12)
+- Manuelle Eintraege, Fokus-Timer, Finanz-Budget (Schritt 9)
+- Schlafmodus und Nest (Schritt 10), gespeicherte Seiten und Terminal-Befehle (Schritt 11)
+- Pakete zum Teilen von Tieren und Agenten (Schritt 12, nur Daten, streng geprueft; Online-Marktplatz spaeter)
+- Laufen auf Fensterkanten (Schritt 13)
+- Installer und Release (Schritt 14)
 
 ## Voraussetzungen (Windows)
 
@@ -90,6 +92,7 @@ src/
   hubLogic.ts       Hunger-Takt, Tracker-Abfragen, Agent-Fenster oeffnen und schliessen
   AgentWindow.tsx   Fenster eines Tiers: Klick, Ziehen, Laufen, Panel, Vorschau
   Pet.tsx           Canvas, spielt die Animationen ab
+  Home.tsx          Hauptfenster: Tierkarten mit Schalter
   Panel.tsx         Status-Panel
   SettingsWindow.tsx  Agenten-Verwaltung und globale Einstellungen
   roles.ts          Rollen (Vorlagen) mit Accessoire und Standard-Tracker
