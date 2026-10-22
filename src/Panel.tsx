@@ -49,11 +49,6 @@ export function Panel({
         <div className="meter-fill" style={{ transform: `scaleX(${hunger})` }} />
       </div>
 
-      <div className="panel-row">
-        <span>Commits heute</span>
-        <strong>-</strong>
-      </div>
-
       <div className="panel-buttons">
         {onFeed && <button onClick={onFeed}>Futter geben (Dev)</button>}
         <button onClick={onTogglePause}>{paused ? "Weiter" : "Pausieren"}</button>

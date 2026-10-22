@@ -5,6 +5,7 @@ import { getCurrentWindow, PhysicalPosition, PhysicalSize, Window } from "@tauri
 import { Pet } from "./Pet";
 import { Panel } from "./Panel";
 import { aimTarget, measureWindow, moodOf, useHunger, useWalker, WindowMeasure } from "./behavior";
+import { useCommits } from "./commits";
 import { PetState } from "./sprites";
 
 const DRAG_THRESHOLD = 4;
@@ -57,6 +58,12 @@ export default function App() {
     bubbleTimer.current = window.setTimeout(() => setBubble(null), BUBBLE_MS);
   };
 
+  // Neue GitHub-Commits sind Futter
+  const { pollNow } = useCommits((fresh, today) => {
+    eat(fresh * FOOD_PER_COMMIT);
+    say(`${today} ${today === 1 ? "Commit" : "Commits"} heute!`);
+  });
+
   useEffect(() => {
     const unlisten = listen<boolean>("pause-changed", (e) => setPaused(e.payload));
     invoke<boolean>("get_autostart").then(setAutostart);
@@ -81,11 +88,13 @@ export default function App() {
   }, [panelOpen]);
 
   // Nur im Dev-Modus: Tasten 1-5 schalten Animationen durch, 0 = Automatik,
-  // F = Futter geben, H = Hunger um 20 % senken
+  // F = Futter geben, H = Hunger um 20 % senken, G = GitHub jetzt abfragen
   const eatRef = useRef(eat);
   eatRef.current = eat;
   const feedRef = useRef(feed);
   feedRef.current = feed;
+  const pollRef = useRef(pollNow);
+  pollRef.current = pollNow;
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const order: PetState[] = ["idle", "walk", "sleep", "eat", "sad"];
@@ -95,6 +104,7 @@ export default function App() {
       else if (e.key === "0") setOverride(null);
       else if (e.key === "f") eatRef.current(FOOD_PER_COMMIT);
       else if (e.key === "h") feedRef.current(-0.2);
+      else if (e.key === "g") pollRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

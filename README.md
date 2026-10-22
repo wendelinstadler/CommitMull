@@ -6,7 +6,7 @@ Das Tier stirbt nie. Wenn es lange nichts zu fressen gibt, wird es nur traurig.
 
 ## Stand
 
-Schritt 2 von 6 ist fertig (siehe [PLAN.md](PLAN.md)).
+Schritt 3 von 6 ist fertig (siehe [PLAN.md](PLAN.md)).
 
 Funktioniert:
 - Transparentes, rahmenloses Fenster, immer im Vordergrund, nicht in der Taskleiste
@@ -19,9 +19,9 @@ Funktioniert:
 - Tray-Icon mit Menue (dasselbe Menue per Rechtsklick auf das Tier)
 - Globaler Hotkey `Ctrl+Shift+P` blendet das Tier ein und aus
 - Autostart mit Windows (schaltbar)
+- GitHub-Anbindung: alle 10 Minuten werden neue Pushes von `wendelinstadler` abgefragt; jeder neue Commit bringt 25 % Futter, dazu eine Sprechblase "N Commits heute!"
 
 Noch nicht gebaut:
-- GitHub-Anbindung: Commits als Futter (Schritt 3)
 - Einstellungsfenster (Schritt 4)
 - Laufen auf Fensterkanten (Schritt 5)
 - Installer und Release (Schritt 6)
@@ -68,6 +68,7 @@ Nur im Dev-Modus, das Fenster braucht dafuer den Fokus (einmal anklicken):
 | `0` | Zurueck zur Automatik |
 | `F` | Futter geben |
 | `H` | Hunger um 20 % senken |
+| `G` | GitHub sofort abfragen |
 
 ## Aufbau
 
@@ -77,6 +78,9 @@ src/
   Pet.tsx        Canvas, spielt die Animationen ab
   Panel.tsx      Status-Panel
   behavior.ts    Hunger, Stimmung, Laufen
+  commits.ts     GitHub abfragen, neue Commits erkennen
+  github.ts      GitHub-API (Events, Vergleich)
+  store.ts       Gespeicherter Zustand
   sprites.ts     Nacktmull als 64x64-Pixelzeichnung samt Frames
 src-tauri/
   src/lib.rs     Tray, Menue, Hotkey, Autostart, Befehle

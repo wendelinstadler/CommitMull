@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { load, Store } from "@tauri-apps/plugin-store";
+import { getStore, saveValue } from "./store";
 import { currentMonitor, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 
 /** Dauer, in der der Hunger (aktive, nicht pausierte Zeit) von voll auf leer faellt. */
 export const HUNGER_EMPTY_MS = 8 * 60 * 60 * 1000;
 const TICK_MS = 30_000;
-const STORE_FILE = "state.json";
 
 export type Mood = "happy" | "ok" | "sad";
 
@@ -22,7 +21,7 @@ export function useHunger(paused: boolean) {
   const [hunger, setHunger] = useState(1);
   const hungerRef = useRef(1);
   const pausedRef = useRef(paused);
-  const store = useRef<Store | null>(null);
+  const loaded = useRef(false);
   pausedRef.current = paused;
 
   const apply = useCallback((next: number) => {
@@ -31,17 +30,16 @@ export function useHunger(paused: boolean) {
   }, []);
 
   const save = useCallback(() => {
-    const s = store.current;
-    if (!s) return;
-    s.set("hunger", hungerRef.current).then(() => s.save());
+    // Vor dem Laden nichts schreiben, sonst ueberschreibt der Startwert den gespeicherten Hunger.
+    if (loaded.current) saveValue("hunger", hungerRef.current);
   }, []);
 
   useEffect(() => {
     let alive = true;
-    load(STORE_FILE, { defaults: {}, autoSave: false }).then(async (s) => {
+    getStore().then(async (s) => {
       const saved = await s.get<number>("hunger");
       if (!alive) return;
-      store.current = s;
+      loaded.current = true;
       if (typeof saved === "number") apply(saved);
     });
 
