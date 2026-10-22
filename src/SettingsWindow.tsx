@@ -306,12 +306,17 @@ export function SettingsWindow() {
       await invoke("set_hotkey", { hotkey: globals.hotkey, kind: "toggle" });
       await invoke("set_hotkey", { hotkey: globals.sleepHotkey, kind: "sleep" });
       await saveSettings(globals);
+      // Seiten und Befehle pflegt das Panel; hier immer den aktuellen gespeicherten Stand uebernehmen, nicht den Entwurf von vor einer Weile.
+      const stored = await readAgents();
+      const actionsOf = (agentId: string, modeId: string) => stored.find((s) => s.id === agentId)?.modes.find((m) => m.id === modeId);
       await saveAgents(
         agents.map((a) => ({
           ...a,
           name: a.name.trim(),
           modes: a.modes.map((m) => ({
             ...m,
+            links: actionsOf(a.id, m.id)?.links,
+            commands: actionsOf(a.id, m.id)?.commands,
             label: m.label?.trim() || undefined,
             trackers: m.trackers.map((t) => {
               if (t.type === "github") return { ...t, user: t.user.trim(), token: t.token.trim() };

@@ -17,6 +17,7 @@ import {
   saveAgents,
   saveAgentState,
 } from "./agents";
+import { checkCommand, checkLink, MAX_COMMANDS, MAX_LINKS, newActionId, upsert } from "./actions";
 import { fetchSnapshot, investView, Snapshot } from "./investTracker";
 import {
   AgentCommand,
@@ -173,6 +174,8 @@ export function startHub(): () => void {
       activeMode: mode.id,
       todos: todos.get(agent.id) ?? [],
       alerts: alerts.get(agent.id) ?? [],
+      links: mode.links ?? [],
+      commands: mode.commands ?? [],
       ai: { ready: aiEnabled && aiHasKey, enabled: aiEnabled, hasKey: aiHasKey, model: aiModel },
       hunger: hunger.get(agent.id) ?? 1,
       views: buildViews(mode),
@@ -445,6 +448,30 @@ export function startHub(): () => void {
     sendState(agent);
   };
 
+  /**
+   * Aendert den aktiven Modus eines Tiers im gespeicherten Stand (lesen, aendern, schreiben) und meldet es allen Fenstern.
+   * Gelesen wird frisch aus dem Speicher, damit gleichzeitige Aenderungen aus der Verwaltung nicht ueberschrieben werden.
+   */
+  const changeMode = async (agentId: string, modeId: string, change: (mode: Mode) => Mode | null) => {
+    const stored = await readAgents();
+    let changed = false;
+    const next = stored.map((a) =>
+      a.id !== agentId
+        ? a
+        : {
+            ...a,
+            modes: a.modes.map((m) => {
+              if (m.id !== modeId) return m;
+              const result = change(m);
+              if (!result) return m;
+              changed = true;
+              return result;
+            }),
+          },
+    );
+    if (changed) await saveAgents(next);
+  };
+
   const loadModeData = async (mode: Mode) => {
     if (entryLogs.has(mode.id)) return;
     const store = await getStore();
@@ -598,6 +625,36 @@ export function startHub(): () => void {
         sendState(agent);
         break;
       }
+      case "action-link-save": {
+        const checked = checkLink(cmd.link.name, cmd.link.url);
+        if (!checked.ok) break;
+        const link = { id: cmd.link.id ?? newActionId(), ...checked.value };
+        changeMode(agent.id, mode.id, (m) => {
+          const list = upsert(m.links ?? [], link, MAX_LINKS);
+          return list ? { ...m, links: list } : null;
+        }).catch((e) => console.warn("Speichern fehlgeschlagen:", e));
+        break;
+      }
+      case "action-link-remove":
+        changeMode(agent.id, mode.id, (m) => ({ ...m, links: (m.links ?? []).filter((l) => l.id !== cmd.link) })).catch((e) =>
+          console.warn("Speichern fehlgeschlagen:", e),
+        );
+        break;
+      case "action-command-save": {
+        const checked = checkCommand(cmd.command.name, cmd.command.command, cmd.command.cwd);
+        if (!checked.ok) break;
+        const command = { id: cmd.command.id ?? newActionId(), ...checked.value };
+        changeMode(agent.id, mode.id, (m) => {
+          const list = upsert(m.commands ?? [], command, MAX_COMMANDS);
+          return list ? { ...m, commands: list } : null;
+        }).catch((e) => console.warn("Speichern fehlgeschlagen:", e));
+        break;
+      }
+      case "action-command-remove":
+        changeMode(agent.id, mode.id, (m) => ({ ...m, commands: (m.commands ?? []).filter((c) => c.id !== cmd.command) }))
+          .then(() => invoke("forget_command", { commandId: cmd.command }))
+          .catch((e) => console.warn("Speichern fehlgeschlagen:", e));
+        break;
       case "sleep": {
         if (phaseOf(agent.id) !== "awake") break;
         const data = extra.get(agent.id) ?? {};

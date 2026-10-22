@@ -1,3 +1,4 @@
+mod actions;
 mod ai;
 mod apps;
 mod quotes;
@@ -306,6 +307,31 @@ async fn close_app_windows(exe: String) -> Result<usize, String> {
     Ok(apps::close_windows_of(&exe))
 }
 
+/// Oeffnet eine gespeicherte Seite im Standardbrowser. Nur IDs: die Adresse liest Rust selbst aus dem Speicher.
+#[tauri::command]
+fn open_link(app: AppHandle, agent_id: String, mode_id: String, link_id: String) -> Result<(), String> {
+    actions::open_link(&app, &agent_id, &mode_id, &link_id)
+}
+
+/// Fuehrt einen gespeicherten Befehl in einem neuen PowerShell-Fenster aus. Nur IDs: den Befehl liest Rust selbst aus dem Speicher.
+/// Neue oder geaenderte Fassungen kommen als "needs-approval" zurueck; approve ist die Pruefsumme aus dem Bestaetigungsdialog.
+#[tauri::command]
+fn run_command(app: AppHandle, agent_id: String, mode_id: String, command_id: String, approve: Option<String>) -> Result<actions::RunOutcome, String> {
+    actions::run_command(&app, &agent_id, &mode_id, &command_id, approve.as_deref())
+}
+
+/// Welche Befehle des Modus sind in ihrer jetzigen Fassung bestaetigt?
+#[tauri::command]
+fn command_status(app: AppHandle, agent_id: String, mode_id: String) -> Result<Vec<actions::CommandStatus>, String> {
+    actions::command_status(&app, &agent_id, &mode_id)
+}
+
+/// Vergisst die Bestaetigung eines geloeschten Befehls.
+#[tauri::command]
+fn forget_command(app: AppHandle, command_id: String) -> Result<(), String> {
+    actions::forget_command(&app, &command_id)
+}
+
 /// Ist ein Anthropic-Schluessel im Windows-Anmeldeinformationsspeicher? (Der Schluessel selbst ist nie lesbar.)
 #[tauri::command]
 fn ai_key_status() -> bool {
@@ -520,6 +546,10 @@ pub fn run() {
             close_app_windows,
             check_app_name,
             fetch_quote,
+            open_link,
+            run_command,
+            command_status,
+            forget_command,
             ai_key_status,
             ai_set_key,
             ai_delete_key,

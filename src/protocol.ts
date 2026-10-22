@@ -2,6 +2,7 @@ import { Accessory } from "./accessories";
 import { Point } from "./agents";
 import { Species } from "./species";
 import { TrackerViews } from "./trackers";
+import { CommandAction, LinkAction } from "./actions";
 import { Alert, Todo } from "./workday";
 
 /** Nachrichten zwischen Hub und Agent-Fenstern (Tauri-Events). */
@@ -68,6 +69,9 @@ export interface AgentStatePayload {
   todos: Todo[];
   alerts: Alert[];
   ai: AiStatus;
+  /** Gespeicherte Seiten und Befehle des aktiven Modus. */
+  links: LinkAction[];
+  commands: CommandAction[];
   /** 1 = satt, 0 = leer */
   hunger: number;
   /** Anzeige der Tracker im Panel (Wochenbudget, Fokuszeit ...). */
@@ -107,6 +111,11 @@ export type AgentCommand =
   | { id: string; type: "todo-toggle"; todo: string }
   | { id: string; type: "todo-remove"; todo: string }
   | { id: string; type: "todo-clear-done" }
+  /** Aktionen des aktiven Modus speichern (neu ohne id, sonst ersetzen) oder loeschen. Geoeffnet und ausgefuehrt wird in Rust. */
+  | { id: string; type: "action-link-save"; link: { id?: string; name: string; url: string } }
+  | { id: string; type: "action-link-remove"; link: string }
+  | { id: string; type: "action-command-save"; command: { id?: string; name: string; command: string; cwd: string } }
+  | { id: string; type: "action-command-remove"; command: string }
   /** Hinweis wegklicken. */
   | { id: string; type: "alert-dismiss"; alert: string }
   /** Schlafen schicken; das Fenster meldet seine Position (home) und das Nest (gespeichertes oder Standard). */

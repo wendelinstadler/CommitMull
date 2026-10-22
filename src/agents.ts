@@ -3,6 +3,7 @@ import { Accessory } from "./accessories";
 import { Role, roleInfo } from "./roles";
 import { Species } from "./species";
 import { getStore, saveValue } from "./store";
+import { CommandAction, LinkAction } from "./actions";
 import { entriesKey, focusKey, GithubTracker, quotesKey, Tracker } from "./trackers";
 
 export type { Role } from "./roles";
@@ -25,6 +26,9 @@ export interface Mode {
   /** Nur bei der Rolle "custom": frei gewaehltes Accessoire. */
   accessory?: Accessory;
   trackers: Tracker[];
+  /** Gespeicherte Seiten und Terminal-Befehle dieses Modus (Reiter "Aktionen" im Panel). */
+  links?: LinkAction[];
+  commands?: CommandAction[];
 }
 
 /** Ein Tier (frueher "Agent"): hat ein Fenster, Hunger, Schlaf und mindestens einen Modus. */

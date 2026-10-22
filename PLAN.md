@@ -81,7 +81,20 @@ Typen, Standardwerte und die Berechnung der Panel-Anzeige liegen in `src/tracker
 - "Alle schlafen schicken / aufwecken": Tray-Eintrag und eigener Hotkey (Standard Strg+Umschalt+S, einstellbar unter Allgemein).
   Schlafen nicht alle, gehen alle sichtbaren Tiere schlafen, sonst werden alle geweckt.
 
-### Aktionen und Sicherheit
+### Aktionen und Sicherheit (umgesetzt, Schritt 13)
+Pro Modus gibt es gespeicherte Seiten und Terminal-Befehle (Reiter "Aktionen" im Panel, dort auch anlegen, bearbeiten, loeschen). Gespeichert in `Mode.links` und `Mode.commands`.
+- **Das Frontend schickt nur IDs.** `open_link` und `run_command` bekommen Tier-, Modus- und Aktions-Id; Adresse und Befehlstext liest Rust (`src-tauri/src/actions.rs`) selbst aus
+  dem Speicher. Es gibt keinen Weg, Text aus GitHub-Antworten, KI-Antworten oder (spaeter) Paketen als Befehl auszufuehren.
+- **Seiten:** nur `http` und `https`, ein Rechner muss genannt sein, keine Zugangsdaten in der Adresse, keine Leer- und Steuerzeichen, hoechstens 2000 Zeichen.
+  Geoeffnet per `ShellExecuteW` im Standardbrowser (keine Kommandozeile, in die sich etwas einschleusen liesse).
+- **Befehle:** laufen in einem neuen, sichtbaren PowerShell-Fenster (`-NoExit`, Befehl als `-EncodedCommand`, damit Anfuehrungszeichen keine Rolle spielen), mit den Rechten des
+  Benutzers, nie als Administrator. Optionaler Arbeitsordner: muss ein vorhandener, vollstaendiger Pfad sein. Hoechstens 2000 Zeichen, 20 Befehle und 30 Seiten je Modus.
+- **Bestaetigung:** Neue oder geaenderte Fassungen (Befehl oder Ordner) fragen vor dem ersten Start nach und zeigen den vollen Befehl. Die Bestaetigung ist an die SHA-256-Pruefsumme
+  von Ordner und Befehl gebunden (`approvals` in state.json, geschrieben nur von Rust) und gilt nur fuer genau diese Fassung. Die Pruefsumme aus dem Dialog geht beim Bestaetigen
+  zurueck; hat sich der Befehl dazwischen geaendert, wird nicht gestartet. Beim Loeschen eines Befehls verfaellt seine Bestaetigung.
+- **Berechtigungen:** keine Shell-Rechte fuer das Frontend; die Befehle sind eigene App-Befehle, die nur die oben genannten Pruefungen ausfuehren.
+
+### Aktionen und Sicherheit (urspruengliche Planung)
 - **Gespeicherte Seiten:** Oeffnen im Standardbrowser ueber das Opener-Plugin, nur `http` und `https`.
 - **Terminal-Befehle:** Ausfuehrung ausschliesslich in Rust. Der Befehl wird per id aus dem Speicher gelesen,
   nie als Text vom Frontend uebernommen und nie aus externen Daten (GitHub-Antworten usw.).
@@ -113,7 +126,7 @@ Hunger und GitHub-Zustand wandern in die neuen Schluessel. Die alten Schluessel 
 11. Begleiter im Arbeitsalltag, Teil 1: Tier mit mehreren Modi, neues Panel-Fenster mit Reitern (Heute, Aufgaben, Mehr), Aufgabenliste,
     Hinweise bei grossen Kursbewegungen  (im Test)
 12. Begleiter, Teil 2: KI-Assistent mit eigenem Anthropic-Schluessel (Chat im Modus, Aufgaben aufteilen, Tagesplan, Depot erklaeren, Tagesrueckblick)  (im Test)
-13. Aktionen: gespeicherte Seiten, Terminal-Befehle mit Bestaetigung
+13. Aktionen: gespeicherte Seiten, Terminal-Befehle mit Bestaetigung  (im Test)
 14. Pakete: Tiere und Agenten als Datei exportieren und importieren, mit strenger Pruefung (siehe unten)
 15. Fensterkanten (WinAPI EnumWindows), faellt runter, wenn das Fenster verschwindet
 16. Release: Installer bauen, GitHub-Release

@@ -362,16 +362,19 @@ dependencies = [
 name = "commitmull"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "keyring",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-store",
  "tokio",
+ "url",
  "windows",
 ]
 

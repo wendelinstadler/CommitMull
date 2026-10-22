@@ -15,12 +15,13 @@ import {
   EVENT_AGENT_STATE,
   HUB_LABEL,
 } from "../protocol";
+import { ActionsTab } from "./ActionsTab";
 import { AssistantTab } from "./AssistantTab";
 import { MoreTab } from "./MoreTab";
 import { TodayTab } from "./TodayTab";
 import { TodoTab } from "./TodoTab";
 
-type Tab = "today" | "todo" | "assistant" | "more";
+type Tab = "today" | "todo" | "actions" | "assistant" | "more";
 
 const MOOD_LABEL = { happy: "Froehlich", ok: "Geht so", sad: "Hungrig" } as const;
 
@@ -29,7 +30,7 @@ const tabKey = (id: string) => `panelTab:${id}`;
 function savedTab(id: string): Tab {
   try {
     const t = localStorage.getItem(tabKey(id));
-    if (t === "today" || t === "todo" || t === "assistant" || t === "more") return t;
+    if (t === "today" || t === "todo" || t === "actions" || t === "assistant" || t === "more") return t;
   } catch {
     /* kein Speicher: egal */
   }
@@ -108,6 +109,7 @@ export function PanelWindow({ id }: { id: string }) {
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "today", label: "Heute" },
     { id: "todo", label: "Aufgaben", count: open },
+    { id: "actions", label: "Aktionen" },
     { id: "assistant", label: "Assistent" },
     { id: "more", label: "Mehr" },
   ];
@@ -156,6 +158,7 @@ export function PanelWindow({ id }: { id: string }) {
         <div className="pw-body" role="tabpanel">
           {tab === "today" && <TodayTab info={info} send={send} />}
           {tab === "todo" && <TodoTab info={info} send={send} onBusy={(b) => (busy.current = b)} />}
+          {tab === "actions" && <ActionsTab info={info} send={send} />}
           {tab === "assistant" && <AssistantTab info={info} onBusy={(b) => (busy.current = b)} />}
           {tab === "more" && (
             <MoreTab
