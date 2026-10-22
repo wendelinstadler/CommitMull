@@ -3,7 +3,7 @@ import { Accessory } from "./accessories";
 import { Role, roleInfo } from "./roles";
 import { Species } from "./species";
 import { getStore, saveValue } from "./store";
-import { entriesKey, focusKey, GithubTracker, Tracker } from "./trackers";
+import { entriesKey, focusKey, GithubTracker, quotesKey, Tracker } from "./trackers";
 
 export type { Role } from "./roles";
 export type { Species } from "./species";
@@ -90,6 +90,7 @@ export async function deleteAgentData(id: string) {
   await store.delete(trackerKey(id, "github"));
   await store.delete(entriesKey(id));
   await store.delete(focusKey(id));
+  await store.delete(quotesKey(id));
   await store.save();
 }
 

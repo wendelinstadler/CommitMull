@@ -1,3 +1,6 @@
+mod apps;
+mod quotes;
+
 use std::sync::Mutex;
 
 use tauri::{
@@ -199,6 +202,38 @@ fn set_agent_menu(app: AppHandle, agents: Vec<AgentEntry>) -> Result<(), String>
     Ok(())
 }
 
+/// Laufende Programme mit sichtbarem Fenster (zum Auswaehlen in der Sperrliste).
+#[tauri::command]
+async fn list_running_apps() -> Vec<apps::OpenWindow> {
+    apps::running_apps()
+}
+
+/// Welche der gesperrten Programme haben gerade ein sichtbares Fenster? Ungueltige Namen werden uebergangen.
+#[tauri::command]
+async fn find_blocked_apps(exes: Vec<String>) -> Vec<String> {
+    let valid: Vec<String> = exes.iter().filter_map(|e| apps::normalize_exe(e).ok()).collect();
+    apps::find_open(&valid)
+}
+
+/// Prueft einen eingegebenen Programmnamen und liefert ihn normalisiert zurueck, oder eine verstaendliche Fehlermeldung.
+#[tauri::command]
+fn check_app_name(name: String) -> Result<String, String> {
+    apps::normalize_exe(&name)
+}
+
+/// Schliesst die Fenster eines Programms sanft (wie ein Klick auf X). Nur Programmnamen, nie Pfade; Systemprogramme sind ausgenommen.
+#[tauri::command]
+async fn close_app_windows(exe: String) -> Result<usize, String> {
+    let exe = apps::normalize_exe(&exe)?;
+    Ok(apps::close_windows_of(&exe))
+}
+
+/// Kurs eines Wertpapiers, einer Waehrung oder einer Kryptowaehrung (Yahoo Finance).
+#[tauri::command]
+async fn fetch_quote(symbol: String) -> Result<quotes::Quote, String> {
+    quotes::fetch_quote(&symbol).await
+}
+
 /// Pause-Zustand. Die Fenster laden teils vor `setup`; dann ist noch nicht pausiert.
 #[tauri::command]
 fn get_paused(app: AppHandle) -> bool {
@@ -376,6 +411,11 @@ pub fn run() {
             open_nest_window,
             close_nest_window,
             set_agent_menu,
+            list_running_apps,
+            find_blocked_apps,
+            close_app_windows,
+            check_app_name,
+            fetch_quote,
             get_paused
         ])
         // Hauptfenster und Einstellungsfenster werden nur versteckt: die App lebt im Tray weiter.

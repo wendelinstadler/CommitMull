@@ -44,6 +44,18 @@ Typen, Standardwerte und die Berechnung der Panel-Anzeige liegen in `src/tracker
     Ein laufender Timer ueberlebt keinen Neustart der App und stoppt, wenn der Agent deaktiviert wird.
 - **Anzeige:** Der Hub schickt mit dem Zustand eine fertig berechnete Sicht (`TrackerViews`) ans Tierfenster; das Panel zeigt sie an.
   Das Whiteboard des Finanz-Agenten faerbt den Verlauf gruen (unter Budget) oder rot (darueber).
+- **Investments** (`invest`, Finanz-Agent): Depot mit Kuerzel, Stueckzahl und Kaufkurs je Position. Der Hub laedt die Kurse in einstellbarem
+  Abstand (5 bis 60 Min) ueber den Rust-Befehl `fetch_quote` (Yahoo Finance, ohne Konto), rechnet fremde Waehrungen zum aktuellen Kurs in die
+  Anzeigewaehrung um und zeigt im Panel Depotwert, Gewinn/Verlust, Tagesveraenderung und je Position Heute/Gesamt. Die letzten Kurse werden
+  gespeichert (`quotes:<agentId>`), bei Ausfall bleiben sie stehen. Nur Anzeige, keine Anlageberatung, kein Futter.
+  Sicherheit: Die Abfrage laeuft nur in Rust, nur gegen den Yahoo-Host, das Kuerzel wird streng geprueft (Buchstaben, Ziffern und . - = ^ _);
+  eine Browser-Kennung ist noetig, die ein Webview nicht setzen darf.
+- **Programm-Sperre** im Fokus-Timer: Sperrliste von Programmnamen (z. B. `discord.exe`). Solange der Timer laeuft, prueft der Hub alle 3 Sekunden
+  (Rust-Befehl `find_blocked_apps`), ob ein gesperrtes Programm ein sichtbares Fenster hat. Dann warnt das Tier, nach der einstellbaren Frist
+  (5, 10 oder 30 Sekunden) werden die Fenster sanft geschlossen (`WM_CLOSE`, wie ein Klick auf X: Programme fragen bei ungespeicherter Arbeit nach)
+  und weiter geprueft. Kein hartes Beenden, keine Webseiten.
+  Sicherheit: Es werden nur Programmnamen aus der selbst gespeicherten Liste angenommen (nur `name.exe`, keine Pfade, nur erlaubte Zeichen),
+  Systemprogramme (explorer, dwm, svchost, taskmgr ...) und CommitMull selbst sind ausgenommen; der Befehl nimmt nichts aus externen Daten.
 - Neuer Tracker = Typ und Standardwerte in `trackers.ts`, Anzeige im Panel, Konfiguration in der Verwaltung, bei Abfragen ein `PollPlugin`.
 - Rollen-Vorlagen (`src/roles.ts`) legen die Start-Tracker fest: Informatiker GitHub, Finanzen Ausgaben, Lernen Fokus-Timer, Fitness und Gewohnheiten Haken.
 

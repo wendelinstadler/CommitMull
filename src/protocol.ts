@@ -11,6 +11,8 @@ export const EVENT_AGENT_TOGGLE = "agent-toggle";
 export const EVENT_AGENT_SLEEP_REQUEST = "agent-sleep-request";
 /** Rust (Tray, Hotkey) an Hub: alle Agenten schlafen schicken oder aufwecken. */
 export const EVENT_SLEEP_ALL = "sleep-all";
+/** Hub an Agent: Sprechblase zeigen, ohne Fressen (Nutzlast: { text }). */
+export const EVENT_AGENT_SAY = "agent-say";
 /** Agent an Geisterfenster: so soll die Zielvorschau aussehen. */
 export const EVENT_GHOST_LOOK = "ghost-look";
 
@@ -68,6 +70,8 @@ export type AgentCommand =
   | { id: string; type: "entry-undo" }
   /** Fokus-Timer starten oder beenden. */
   | { id: string; type: "focus-toggle" }
+  /** Kurse der Investments sofort neu laden. */
+  | { id: string; type: "invest-refresh" }
   /** Schlafen schicken; das Fenster meldet seine Position (home) und das Nest (gespeichertes oder Standard). */
   | { id: string; type: "sleep"; home: Point; nest: Point }
   /** Aufwecken. */

@@ -33,21 +33,57 @@ export interface EntriesTracker {
   currency: string;
 }
 
-/** Fokus-Timer: pro volle Zeitspanne gibt es Futter. */
+/** Fokus-Timer: pro volle Zeitspanne gibt es Futter; waehrend er laeuft, koennen Programme gesperrt sein. */
 export interface FocusTracker {
   type: "focus";
   blockMinutes: number;
   /** Futter pro volle Zeitspanne in Prozent. */
   foodPercent: number;
+  /** Gesperrte Programme (z. B. "discord.exe"): waehrend des Fokus warnt das Tier und schliesst sie sanft. Alt-Daten ohne Feld = keine. */
+  blocked?: string[];
+  /** Sekunden zwischen Warnung und Schliessen (Standard 10). */
+  graceSeconds?: number;
 }
 
-export type Tracker = GithubTracker | EntriesTracker | FocusTracker;
+/** Eine Position im Depot. Der Kaufkurs ist in der Kurswaehrung des Kuerzels (bei London in Pfund, nicht Pence). */
+export interface Position {
+  id: string;
+  /** Kuerzel wie bei Yahoo Finance: AAPL, SAP.DE, VWRL.L, BTC-USD */
+  symbol: string;
+  qty: number;
+  buyPrice: number;
+}
+
+/** Investments: Depot mit Kursen (nur Anzeige, keine Anlageberatung). Die Kurse holt der Hub, siehe investTracker.ts. */
+export interface InvestTracker {
+  type: "invest";
+  /** Waehrung, in der Wert und Gewinn angezeigt werden, z. B. "CHF". */
+  baseCurrency: string;
+  refreshMinutes: number;
+  positions: Position[];
+}
+
+export type Tracker = GithubTracker | EntriesTracker | FocusTracker | InvestTracker;
 export type TrackerType = Tracker["type"];
 
 export const TRACKER_LABELS: Record<TrackerType, string> = {
   github: "GitHub-Commits",
   entries: "Manuelle Eintraege",
   focus: "Fokus-Timer",
+  invest: "Investments",
+};
+
+export const INVEST_REFRESH_OPTIONS = [5, 15, 30, 60];
+export const GRACE_OPTIONS = [5, 10, 30];
+export const DEFAULT_GRACE_SECONDS = 10;
+
+/** Name des Programms ohne ".exe", fuer Anzeige. */
+export const prettyApp = (exe: string) => exe.replace(/\.exe$/i, "");
+
+/** Programmname wie ihn Windows kennt: Kleinbuchstaben, mit ".exe". */
+export const normalizeExe = (name: string) => {
+  const n = name.trim().toLowerCase();
+  return n.endsWith(".exe") ? n : `${n}.exe`;
 };
 
 export const FOCUS_BLOCK_OPTIONS = [15, 25, 45, 60];
@@ -55,6 +91,7 @@ export const FOCUS_BLOCK_OPTIONS = [15, 25, 45, 60];
 export function defaultTracker(type: "github"): GithubTracker;
 export function defaultTracker(type: "entries", kind?: EntriesTracker["kind"], label?: string): EntriesTracker;
 export function defaultTracker(type: "focus"): FocusTracker;
+export function defaultTracker(type: "invest"): InvestTracker;
 export function defaultTracker(type: TrackerType, kind: EntriesTracker["kind"] = "expense", label?: string): Tracker {
   switch (type) {
     case "github":
@@ -69,7 +106,9 @@ export function defaultTracker(type: TrackerType, kind: EntriesTracker["kind"] =
         currency: "CHF",
       };
     case "focus":
-      return { type, blockMinutes: 25, foodPercent: 25 };
+      return { type, blockMinutes: 25, foodPercent: 25, blocked: [], graceSeconds: DEFAULT_GRACE_SECONDS };
+    case "invest":
+      return { type, baseCurrency: "CHF", refreshMinutes: 15, positions: [] };
   }
 }
 
@@ -95,6 +134,7 @@ export interface FocusSession {
 
 export const MAX_LOG = 500;
 export const entriesKey = (agentId: string) => `entries:${agentId}`;
+export const quotesKey = (agentId: string) => `quotes:${agentId}`;
 export const focusKey = (agentId: string) => `focus:${agentId}`;
 
 // ---------------------------------------------------------------------------------------------
@@ -118,11 +158,47 @@ export interface FocusView {
   elapsedMinutes: number;
   blockMinutes: number;
   todayMinutes: number;
+  /** Gesperrte Programme (Anzeigenamen). */
+  blocked: string[];
+  /** In dieser Sitzung geschlossene Programme. */
+  closedCount: number;
+}
+
+/** Eine Zeile der Depot-Anzeige. Fehlt der Kurs (noch nicht geladen, Fehler), sind die Zahlen null. */
+export interface InvestRow {
+  symbol: string;
+  name: string;
+  price: number | null;
+  currency: string;
+  /** Tagesveraenderung (0.012 = +1,2 %). */
+  dayPct: number | null;
+  /** Gewinn/Verlust gegenueber dem Kaufkurs. */
+  gainPct: number | null;
+  /** Wert der Position in der Anzeigewaehrung. */
+  value: number | null;
+}
+
+export interface InvestView {
+  base: string;
+  count: number;
+  /** Wert, Einsatz und Gewinn in der Anzeigewaehrung (Umrechnung zum aktuellen Kurs). */
+  value: number;
+  cost: number;
+  gain: number;
+  gainPct: number;
+  day: number;
+  dayPct: number;
+  /** Zeitpunkt der letzten erfolgreichen Abfrage, oder null. */
+  updatedAt: number | null;
+  rows: InvestRow[];
+  errors: string[];
+  loading: boolean;
 }
 
 export interface TrackerViews {
   entries?: EntriesView;
   focus?: FocusView;
+  invest?: InvestView;
 }
 
 export const startOfDay = (ts: number) => {
@@ -173,6 +249,7 @@ export function focusView(
   sessions: FocusSession[],
   running: { startedAt: number } | undefined,
   now: number,
+  closedCount = 0,
 ): FocusView {
   const day = startOfDay(now);
   const elapsedMinutes = running ? Math.floor((now - running.startedAt) / 60_000) : 0;
@@ -182,5 +259,7 @@ export function focusView(
     elapsedMinutes,
     blockMinutes: t.blockMinutes,
     todayMinutes: doneToday + elapsedMinutes,
+    blocked: (t.blocked ?? []).map(prettyApp),
+    closedCount,
   };
 }

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Mood } from "./behavior";
 import { SleepPhase } from "./protocol";
-import { EntriesView, FocusView, formatAmount, TrackerViews } from "./trackers";
+import { formatMoney, formatPercent } from "./investTracker";
+import { EntriesView, FocusView, formatAmount, InvestView, TrackerViews } from "./trackers";
 
 interface Props {
   name: string;
@@ -17,6 +18,7 @@ interface Props {
   onEntry: (amount: number, note: string) => void;
   onUndo: () => void;
   onFocusToggle: () => void;
+  onInvestRefresh: () => void;
   autostart: boolean;
   onTogglePause: () => void;
   onToggleAutostart: () => void;
@@ -46,6 +48,7 @@ export function Panel({
   onEntry,
   onUndo,
   onFocusToggle,
+  onInvestRefresh,
   autostart,
   onTogglePause,
   onToggleAutostart,
@@ -75,6 +78,7 @@ export function Panel({
 
       {views.entries && <EntriesSection view={views.entries} onEntry={onEntry} onUndo={onUndo} />}
       {views.focus && <FocusSection view={views.focus} onToggle={onFocusToggle} />}
+      {views.invest && <InvestSection view={views.invest} onRefresh={onInvestRefresh} />}
 
       <div className="panel-buttons">
         {onFeed && <button onClick={onFeed}>Futter geben (Dev)</button>}
@@ -199,9 +203,79 @@ function FocusSection({ view, onToggle }: { view: FocusView; onToggle: () => voi
           </strong>
         </div>
       )}
+      {view.blocked.length > 0 && (
+        <div className="panel-note">
+          Gesperrt: {view.blocked.join(", ")}
+          {view.running && view.closedCount > 0 && <> ({view.closedCount} geschlossen)</>}
+        </div>
+      )}
       <div className="panel-form">
         <button onClick={onToggle}>{view.running ? "Stopp" : "Fokus starten"}</button>
       </div>
     </div>
+  );
+}
+
+const tone = (n: number) => (n > 0 ? "up" : n < 0 ? "down" : "");
+
+/** Depot: Wert, Gewinn/Verlust und die einzelnen Positionen mit Tages- und Gesamtveraenderung. Nur Anzeige. */
+function InvestSection({ view, onRefresh }: { view: InvestView; onRefresh: () => void }) {
+  const time = view.updatedAt
+    ? new Date(view.updatedAt).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })
+    : null;
+  return (
+    <div className="panel-section">
+      <div className="panel-row">
+        <span>Depot</span>
+        <strong>
+          {formatMoney(view.value)} {view.base}
+        </strong>
+      </div>
+      {view.count === 0 ? (
+        <div className="panel-note">Keine Positionen. Trage sie in den Einstellungen ein.</div>
+      ) : (
+        <>
+          <div className="panel-row">
+            <span>Gewinn</span>
+            <strong className={tone(view.gain)}>
+              {view.gain >= 0 ? "+" : "-"}
+              {formatMoney(Math.abs(view.gain))} ({formatPercent(view.gainPct)})
+            </strong>
+          </div>
+          <div className="panel-row">
+            <span>Heute</span>
+            <strong className={tone(view.day)}>{formatPercent(view.dayPct)}</strong>
+          </div>
+          <div className="panel-table">
+            <span />
+            <span className="head">Heute</span>
+            <span className="head">Gesamt</span>
+            {view.rows.slice(0, 8).map((r) => (
+              <PositionRow key={r.symbol} row={r} />
+            ))}
+          </div>
+          {view.rows.length > 8 && <div className="panel-note">und {view.rows.length - 8} weitere</div>}
+          {view.errors.length > 0 && <div className="panel-note error">{view.errors[0]}</div>}
+          <div className="panel-note">
+            {view.loading ? "Lade Kurse ..." : time ? `Stand ${time}` : "Noch keine Kurse"}{" "}
+            <button className="panel-link" onClick={onRefresh} disabled={view.loading}>
+              Aktualisieren
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PositionRow({ row }: { row: InvestView["rows"][number] }) {
+  return (
+    <>
+      <span className="sym" title={row.name}>
+        {row.symbol}
+      </span>
+      <span className={row.dayPct === null ? "" : tone(row.dayPct)}>{row.dayPct === null ? "-" : formatPercent(row.dayPct)}</span>
+      <span className={row.gainPct === null ? "" : tone(row.gainPct)}>{row.gainPct === null ? "-" : formatPercent(row.gainPct)}</span>
+    </>
   );
 }

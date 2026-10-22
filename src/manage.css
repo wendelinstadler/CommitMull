@@ -238,3 +238,137 @@
 .manage-footer .settings-message {
   margin-bottom: 8px;
 }
+
+/* Editoren der Futterquellen: Sperrliste und Depot */
+
+.editor {
+  margin: 4px 0 12px;
+}
+
+.editor-title {
+  display: block;
+  margin-bottom: 3px;
+  font-weight: 600;
+}
+
+.editor-row {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.editor-row input {
+  flex: 1;
+}
+
+.editor button,
+.editor-link {
+  padding: 5px 10px;
+  background: #fbe3e6;
+  border: 1px solid #7a3b4a;
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.editor button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.editor .editor-link {
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  color: #7a3b4a;
+  text-decoration: underline;
+}
+
+.editor-error {
+  color: #a3281f !important;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chips li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  background: #fff;
+  border: 1px solid #7a3b4a;
+  border-radius: 12px;
+}
+
+.chips li button {
+  padding: 0 6px;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  color: #7a3b4a;
+  line-height: 1.2;
+}
+
+.running {
+  max-height: 150px;
+  margin: 6px 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid #e6cfd3;
+  border-radius: 6px;
+}
+
+.running li {
+  border-bottom: 1px solid #f1e3e5;
+}
+
+.running li:last-child {
+  border-bottom: 0;
+}
+
+.running li.muted {
+  padding: 4px 8px;
+  color: #6b4a52;
+  font-size: 12px;
+}
+
+.running li button {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+}
+
+.running li button span {
+  color: #6b4a52;
+  font-size: 12px;
+}
+
+.positions {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr auto;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.positions .head {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.positions .icon {
+  padding: 3px 8px;
+}

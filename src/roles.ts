@@ -28,7 +28,7 @@ export const ROLES: RoleInfo[] = [
     label: "Finanzen",
     hint: "Ausgaben eintragen, Wochenbudget im Blick behalten.",
     accessory: "whiteboard",
-    trackers: () => [defaultTracker("entries", "expense", "Ausgabe")],
+    trackers: () => [defaultTracker("entries", "expense", "Ausgabe"), defaultTracker("invest")],
   },
   {
     id: "learning",

@@ -21,6 +21,7 @@ import {
   AgentStatePayload,
   EVENT_AGENT_CMD,
   EVENT_AGENT_FED,
+  EVENT_AGENT_SAY,
   EVENT_AGENT_SLEEP_REQUEST,
   EVENT_AGENT_STATE,
   EVENT_AGENT_TOGGLE,
@@ -29,6 +30,7 @@ import {
 } from "./protocol";
 import { DEFAULT_SETTINGS, loadSettings, SETTINGS_CHANGED } from "./settings";
 import { getStore, saveValue } from "./store";
+import { fetchSnapshot, investView, Snapshot } from "./investTracker";
 import { githubPlugin } from "./trackerPlugins";
 import {
   Entry,
@@ -39,6 +41,8 @@ import {
   focusView,
   formatAmount,
   MAX_LOG,
+  prettyApp,
+  quotesKey,
   startOfDay,
   trackerOf,
   TrackerViews,
@@ -57,8 +61,11 @@ const validPoint = (p: unknown): Point | null => {
 
 const githubOf = (agent: Agent) => trackerOf(agent.trackers, "github");
 
-/** Futter pro Ereignis des ersten Trackers (fuer die Dev-Taste F), sonst 25 %. */
-const defaultFood = (agent: Agent) => (agent.trackers[0]?.foodPercent ?? 25) / 100;
+/** Futter pro Ereignis des ersten fuetternden Trackers (fuer die Dev-Taste F), sonst 25 %. Investments fuettern nicht. */
+const defaultFood = (agent: Agent) => {
+  const feeder = agent.trackers.find((t) => t.type !== "invest");
+  return (feeder ? feeder.foodPercent : 25) / 100;
+};
 
 /**
  * Die zentrale Logik: Hunger, Tracker und die Agent-Fenster. Die Fenster zeigen nur an und melden
@@ -84,6 +91,16 @@ export function startHub(): () => void {
   const focusLogs = new Map<string, FocusSession[]>();
   /** Laufende Fokus-Timer: Startzeit und wie viele volle Zeitspannen schon Futter gaben. */
   const focusRuns = new Map<string, { startedAt: number; credited: number }>();
+  /** Gesperrte Programme, die gerade offen sind: seit wann, und ob schon versucht wurde, sie zu schliessen. */
+  const blockWatch = new Map<string, { since: number; attempted: boolean }>();
+  /** In der laufenden Fokus-Sitzung geschlossene Programme je Agent. */
+  const focusClosed = new Map<string, number>();
+  let blockTimer: number | undefined;
+  let blockChecking = false;
+  /** Zuletzt geladene Kurse der Depots, Aktualisierungs-Timer und laufende Abfragen. */
+  const investSnaps = new Map<string, Snapshot>();
+  const investTimers = new Map<string, { timer: number; config: string }>();
+  const investLoading = new Set<string>();
   const unlisteners: UnlistenFn[] = [];
   let lastTick = Date.now();
 
@@ -95,7 +112,11 @@ export function startHub(): () => void {
     const entries = trackerOf(agent.trackers, "entries");
     if (entries) views.entries = entriesView(entries, entryLogs.get(agent.id) ?? [], now);
     const focus = trackerOf(agent.trackers, "focus");
-    if (focus) views.focus = focusView(focus, focusLogs.get(agent.id) ?? [], focusRuns.get(agent.id), now);
+    if (focus) {
+      views.focus = focusView(focus, focusLogs.get(agent.id) ?? [], focusRuns.get(agent.id), now, focusClosed.get(agent.id) ?? 0);
+    }
+    const invest = trackerOf(agent.trackers, "invest");
+    if (invest) views.invest = investView(invest, investSnaps.get(agent.id), investLoading.has(agent.id));
     return views;
   };
 
@@ -188,7 +209,113 @@ export function startHub(): () => void {
   };
 
   /** Beendet einen laufenden Fokus-Timer und speichert die Sitzung, wenn mindestens eine Minute zusammenkam. */
+  const say = (id: string, text: string) => {
+    emitTo(agentLabel(id), EVENT_AGENT_SAY, { text }).catch(() => {});
+  };
+
+  /**
+   * Programm-Sperre: Solange ein Fokus-Timer mit Sperrliste laeuft, wird alle paar Sekunden geprueft, ob ein gesperrtes
+   * Programm ein sichtbares Fenster hat. Dann warnt das Tier, nach der Frist werden die Fenster sanft geschlossen
+   * (wie ein Klick auf X, Programme fragen bei ungespeicherter Arbeit nach) und es wird weiter geprueft.
+   * Die Programmnamen stammen nur aus der selbst gespeicherten Sperrliste des Benutzers.
+   */
+  const checkBlocked = async () => {
+    if (blockChecking) return;
+    blockChecking = true;
+    try {
+      let watching = false;
+      for (const agent of agents) {
+        const tracker = trackerOf(agent.trackers, "focus");
+        const list = tracker?.blocked ?? [];
+        if (!tracker || !focusRuns.has(agent.id) || list.length === 0) continue;
+        watching = true;
+        let open: string[] = [];
+        try {
+          open = await invoke<string[]>("find_blocked_apps", { exes: list });
+        } catch (e) {
+          console.warn("Programmsuche fehlgeschlagen:", e);
+          continue;
+        }
+        const graceMs = (tracker.graceSeconds ?? 10) * 1000;
+        const now = Date.now();
+        for (const exe of list) {
+          const key = `${agent.id}|${exe}`;
+          const watch = blockWatch.get(key);
+          if (!open.includes(exe)) {
+            if (watch?.attempted) {
+              focusClosed.set(agent.id, (focusClosed.get(agent.id) ?? 0) + 1);
+              say(agent.id, `${prettyApp(exe)} ist zu. Weiter so!`);
+              sendState(agent);
+            }
+            blockWatch.delete(key);
+          } else if (!watch) {
+            blockWatch.set(key, { since: now, attempted: false });
+            say(agent.id, `${prettyApp(exe)} ist waehrend des Fokus gesperrt. Ich schliesse es in ${graceMs / 1000} s.`);
+          } else if (now - watch.since >= graceMs) {
+            await invoke("close_app_windows", { exe }).catch((e) => console.warn("Schliessen fehlgeschlagen:", e));
+            blockWatch.set(key, { since: now, attempted: true });
+          }
+        }
+      }
+      if (!watching && blockTimer !== undefined) {
+        window.clearInterval(blockTimer);
+        blockTimer = undefined;
+      }
+    } finally {
+      blockChecking = false;
+    }
+  };
+
+  const startBlockWatch = () => {
+    if (blockTimer === undefined) blockTimer = window.setInterval(checkBlocked, 3000);
+    checkBlocked();
+  };
+
+  /** Laedt die Kurse eines Depots neu und zeigt sie an. */
+  const refreshInvest = async (id: string) => {
+    const agent = find(id);
+    const tracker = agent && trackerOf(agent.trackers, "invest");
+    if (!agent || !tracker || tracker.positions.length === 0 || investLoading.has(id)) return;
+    investLoading.add(id);
+    sendState(agent);
+    try {
+      const snap = await fetchSnapshot(tracker, investSnaps.get(id));
+      if (!alive) return;
+      investSnaps.set(id, snap);
+      await saveValue(quotesKey(id), snap);
+    } catch (e) {
+      console.warn("Kursabfrage fehlgeschlagen:", e);
+    } finally {
+      investLoading.delete(id);
+      const current = find(id);
+      if (current) sendState(current);
+    }
+  };
+
+  /** Kurs-Timer pro Depot: nur neu starten, wenn sich Depot oder Intervall aendern; nur fuer aktive Agenten. */
+  const syncInvest = () => {
+    for (const [id, entry] of [...investTimers]) {
+      const agent = find(id);
+      const tracker = agent && trackerOf(agent.trackers, "invest");
+      if (!agent?.visible || !tracker || tracker.positions.length === 0 || JSON.stringify(tracker) !== entry.config) {
+        window.clearInterval(entry.timer);
+        investTimers.delete(id);
+      }
+    }
+    for (const agent of agents) {
+      const tracker = trackerOf(agent.trackers, "invest");
+      if (!agent.visible || !tracker || tracker.positions.length === 0 || investTimers.has(agent.id)) continue;
+      refreshInvest(agent.id);
+      investTimers.set(agent.id, {
+        timer: window.setInterval(() => refreshInvest(agent.id), Math.max(5, tracker.refreshMinutes) * 60_000),
+        config: JSON.stringify(tracker),
+      });
+    }
+  };
+
   const stopFocus = (id: string) => {
+    for (const key of [...blockWatch.keys()]) if (key.startsWith(`${id}|`)) blockWatch.delete(key);
+    focusClosed.delete(id);
     const run = focusRuns.get(id);
     if (!run) return;
     focusRuns.delete(id);
@@ -255,6 +382,8 @@ export function startHub(): () => void {
       if (!entryLogs.has(agent.id)) {
         const store = await getStore();
         entryLogs.set(agent.id, (await store.get<Entry[]>(entriesKey(agent.id))) ?? []);
+        const snap = await store.get<Snapshot>(quotesKey(agent.id));
+        if (snap) investSnaps.set(agent.id, snap);
         focusLogs.set(agent.id, (await store.get<FocusSession[]>(focusKey(agent.id))) ?? []);
       }
     }
@@ -266,6 +395,7 @@ export function startHub(): () => void {
       phase.delete(agent.id);
       invoke("close_nest_window", { id: agent.id }).catch(() => {});
       entryLogs.delete(agent.id);
+      investSnaps.delete(agent.id);
       focusLogs.delete(agent.id);
       focusRuns.delete(agent.id);
       deleteAgentData(agent.id).catch((e) => console.warn("Aufraeumen fehlgeschlagen:", e));
@@ -282,6 +412,7 @@ export function startHub(): () => void {
       }
     }
     syncPolling();
+    syncInvest();
     syncMenu();
   };
 
@@ -363,8 +494,15 @@ export function startHub(): () => void {
       }
       case "focus-toggle":
         if (focusRuns.has(agent.id)) stopFocus(agent.id);
-        else if (trackerOf(agent.trackers, "focus")) focusRuns.set(agent.id, { startedAt: Date.now(), credited: 0 });
+        else if (trackerOf(agent.trackers, "focus")) {
+          focusRuns.set(agent.id, { startedAt: Date.now(), credited: 0 });
+          focusClosed.set(agent.id, 0);
+          if ((trackerOf(agent.trackers, "focus")?.blocked ?? []).length > 0) startBlockWatch();
+        }
         sendState(agent);
+        break;
+      case "invest-refresh":
+        refreshInvest(agent.id);
         break;
     }
   };
@@ -428,6 +566,8 @@ export function startHub(): () => void {
     alive = false;
     window.clearInterval(tickTimer);
     pollTimers.forEach((entry) => window.clearInterval(entry.timer));
+    investTimers.forEach((entry) => window.clearInterval(entry.timer));
+    window.clearInterval(blockTimer);
     unlisteners.forEach((un) => un());
   };
 }

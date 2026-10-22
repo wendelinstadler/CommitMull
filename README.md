@@ -25,6 +25,8 @@ Funktioniert:
 - Deaktivierte Agenten haben kein Fenster und werden nicht hungriger, bleiben aber im Tray-Menue unter "Agenten" und lassen sich dort wieder einschalten
 - Tierarten: Nacktmull, Katze, Hund, Echse, Schlange, Vogel, Maulwurf (je Vorder- und Seitenansicht, alle Animationen)
 - Futterquellen pro Agent: GitHub-Commits, manuelle Eintraege (Ausgaben mit Wochenbudget oder Haken) und Fokus-Timer; Eintragen und Starten im Panel des Tiers
+- Investments (Finanz-Agent): Depot mit Kuerzel, Stueckzahl und Kaufkurs; das Panel zeigt Depotwert, Gewinn/Verlust, Tagesveraenderung und je Position Heute und Gesamt. Kurse von Yahoo Finance (ohne Konto, leicht verzoegert), fremde Waehrungen werden umgerechnet. Nur Anzeige, keine Anlageberatung.
+- Programm-Sperre im Fokus-Timer: Sperrliste (z. B. `discord.exe`, auswaehlbar aus den laufenden Programmen). Waehrend der Fokus laeuft, warnt das Tier und schliesst gesperrte Programme nach der Frist sanft (wie ein Klick auf X, ungespeicherte Arbeit wird nicht verworfen). Systemprogramme sind ausgenommen.
 - Finanz-Agent: Panel zeigt die Ausgaben dieser Woche gegen das Budget (z. B. 84 von 150 CHF), das Whiteboard am Tier wird gruen unter und rot ueber dem Budget
 - Schlafmodus: "Schlafen schicken" im Panel, das Tier laeuft zu seinem Nest, legt sich hin und schlaeft; sein Hunger steht still, eintreffendes Futter wird beim Aufwecken gutgeschrieben; "Aufwecken" schickt es zurueck an seinen Platz
 - Nest: "Nest verschieben" im Panel (ziehen, "Fertig"), die Position wird gespeichert; sichtbar nur, solange das Tier schlaeft
@@ -103,6 +105,8 @@ src/
   NestWindow.tsx    Nestfenster (Anzeige im Schlaf, Verschieben)
   trackers.ts       Tracker-Typen, Standardwerte, Panel-Anzeige (Wochenbudget, Fokuszeit)
   trackerPlugins.ts Vertrag fuer abfragende Tracker (GitHub)
+  investTracker.ts  Kurse laden, Depot berechnen
+  trackerEditors.tsx  Sperrliste und Depot in der Verwaltung
   Panel.tsx         Status-Panel
   SettingsWindow.tsx  Agenten-Verwaltung und globale Einstellungen
   roles.ts          Rollen (Vorlagen) mit Accessoire und Standard-Tracker
@@ -120,6 +124,8 @@ src/
   store.ts          gespeicherter Zustand
   sprites.ts        Posen und Animationen, setzt Art und Accessoire zusammen (64x64)
 src-tauri/
+  src/apps.rs     Programmfenster auflisten und sanft schliessen (Programm-Sperre)
+  src/quotes.rs   Kursabfrage (Yahoo Finance)
   src/lib.rs        Tray, Menue, Hotkey, Autostart, Agent-Fenster, Befehle
 ```
 

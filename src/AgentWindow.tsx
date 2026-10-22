@@ -11,6 +11,7 @@ import {
   AgentStatePayload,
   EVENT_AGENT_CMD,
   EVENT_AGENT_FED,
+  EVENT_AGENT_SAY,
   EVENT_AGENT_SLEEP_REQUEST,
   EVENT_AGENT_STATE,
   EVENT_GHOST_LOOK,
@@ -165,6 +166,7 @@ export function AgentWindow({ id }: Props) {
       }),
       listen<boolean>("pause-changed", (e) => setPaused(e.payload)),
       listen(EVENT_AGENT_SLEEP_REQUEST, () => goToSleepRef.current()),
+      listen<{ text: string }>(EVENT_AGENT_SAY, (e) => sayRef.current(e.payload.text)),
     ]);
     unlisteners.then(() => {
       if (alive) command({ id, type: "ready" });
@@ -320,6 +322,7 @@ export function AgentWindow({ id }: Props) {
           onEntry={(amount, note) => command({ id, type: "entry", amount, note })}
           onUndo={() => command({ id, type: "entry-undo" })}
           onFocusToggle={() => command({ id, type: "focus-toggle" })}
+          onInvestRefresh={() => command({ id, type: "invest-refresh" })}
           autostart={autostart}
           onTogglePause={togglePause}
           onToggleAutostart={toggleAutostart}

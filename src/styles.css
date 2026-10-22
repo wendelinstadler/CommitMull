@@ -124,6 +124,53 @@ body,
   color: #a3281f;
 }
 
+.panel strong.up {
+  color: #1f7a34;
+}
+
+.panel strong.down,
+.panel-table .down {
+  color: #a3281f;
+}
+
+.panel-table .up {
+  color: #1f7a34;
+}
+
+.panel-note {
+  margin-top: 4px;
+  color: #6b4a52;
+  font-size: 11px;
+}
+
+.panel-note.error {
+  color: #a3281f;
+}
+
+.panel-table {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 2px 8px;
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.panel-table .head {
+  color: #6b4a52;
+  text-align: right;
+}
+
+.panel-table > span:not(.sym):not(:empty) {
+  text-align: right;
+}
+
+.panel-table .sym {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .panel-form {
   display: flex;
   flex-direction: column;

@@ -25,12 +25,15 @@ import {
   saveSettings,
 } from "./settings";
 import { Species, SPECIES_LIST } from "./species";
+import { BlockListEditor, InvestEditor, validateInvest } from "./trackerEditors";
 import {
   defaultTracker,
   EntriesTracker,
   FocusTracker,
   FOCUS_BLOCK_OPTIONS,
+  GRACE_OPTIONS,
   GithubTracker,
+  InvestTracker,
   Tracker,
   TrackerType,
   TRACKER_LABELS,
@@ -103,6 +106,7 @@ export function SettingsWindow() {
   const github = agent && trackerOf(agent.trackers, "github");
   const entries = agent && trackerOf(agent.trackers, "entries");
   const focus = agent && trackerOf(agent.trackers, "focus");
+  const invest = agent && trackerOf(agent.trackers, "invest");
 
   const updateGlobal = <K extends keyof GlobalSettings>(key: K, value: GlobalSettings[K]) =>
     setGlobals((g) => ({ ...g, [key]: value }));
@@ -122,6 +126,7 @@ export function SettingsWindow() {
   const updateGithub = (patch: Partial<GithubTracker>) => updateTracker<GithubTracker>("github", patch);
   const updateEntries = (patch: Partial<EntriesTracker>) => updateTracker<EntriesTracker>("entries", patch);
   const updateFocus = (patch: Partial<FocusTracker>) => updateTracker<FocusTracker>("focus", patch);
+  const updateInvest = (patch: Partial<InvestTracker>) => updateTracker<InvestTracker>("invest", patch);
 
   /** Wechselt die Art der Eintraege; ein unveraenderter Standardname wird mitgewechselt. */
   const setEntriesKind = (kind: EntriesTracker["kind"]) => {
@@ -193,6 +198,13 @@ export function SettingsWindow() {
       if (gh && !gh.user.trim()) {
         setSelected(a.id);
         setMessage({ text: `${a.name}: Der GitHub-Benutzername darf nicht leer sein.`, error: true });
+        return;
+      }
+      const inv = trackerOf(a.trackers, "invest");
+      const invError = inv && validateInvest(inv);
+      if (invError) {
+        setSelected(a.id);
+        setMessage({ text: `${a.name}: ${invError}`, error: true });
         return;
       }
       const en = trackerOf(a.trackers, "entries");
@@ -465,6 +477,30 @@ export function SettingsWindow() {
                       ))}
                     </select>
                   </label>
+
+                  <label>
+                    <span>Frist, bevor ein gesperrtes Programm geschlossen wird</span>
+                    <select value={focus.graceSeconds ?? 10} onChange={(e) => updateFocus({ graceSeconds: Number(e.target.value) })}>
+                      {GRACE_OPTIONS.map((s) => (
+                        <option key={s} value={s}>
+                          {s} Sekunden
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <BlockListEditor blocked={focus.blocked ?? []} onChange={(list) => updateFocus({ blocked: list })} />
+                </div>
+              )}
+
+              <label className="manage-check">
+                <input type="checkbox" checked={!!invest} onChange={(e) => toggleTracker("invest", e.target.checked)} />
+                <span>{TRACKER_LABELS.invest}</span>
+              </label>
+
+              {invest && (
+                <div className="manage-indent">
+                  <InvestEditor tracker={invest} onChange={updateInvest} />
                 </div>
               )}
             </>
