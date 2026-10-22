@@ -3,6 +3,8 @@ import { emitTo, listen, UnlistenFn } from "@tauri-apps/api/event";
 import {
   accessoryOf,
   Agent,
+  AgentState,
+  Point,
   AGENTS_CHANGED,
   deleteAgentData,
   ensureAgents,
@@ -19,8 +21,11 @@ import {
   AgentStatePayload,
   EVENT_AGENT_CMD,
   EVENT_AGENT_FED,
+  EVENT_AGENT_SLEEP_REQUEST,
   EVENT_AGENT_STATE,
   EVENT_AGENT_TOGGLE,
+  EVENT_SLEEP_ALL,
+  SleepPhase,
 } from "./protocol";
 import { DEFAULT_SETTINGS, loadSettings, SETTINGS_CHANGED } from "./settings";
 import { getStore, saveValue } from "./store";
@@ -43,6 +48,13 @@ const TICK_MS = 30_000;
 
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
 
+/** Prueft eine vom Fenster gemeldete Position (nur endliche, vernuenftig grosse Zahlen). */
+const validPoint = (p: unknown): Point | null => {
+  const q = p as Point | null | undefined;
+  const ok = (n: unknown) => typeof n === "number" && Number.isFinite(n) && Math.abs(n) < 100_000;
+  return q && ok(q.x) && ok(q.y) ? { x: Math.round(q.x), y: Math.round(q.y) } : null;
+};
+
 const githubOf = (agent: Agent) => trackerOf(agent.trackers, "github");
 
 /** Futter pro Ereignis des ersten Trackers (fuer die Dev-Taste F), sonst 25 %. */
@@ -59,6 +71,12 @@ export function startHub(): () => void {
   let hungerHours = DEFAULT_SETTINGS.hungerHours;
   let agents: Agent[] = [];
   const hunger = new Map<string, number>();
+  /** Schlafdaten je Agent (Nest, Platz, Futter im Wartestand); der Rest von AgentState neben dem Hunger. */
+  const extra = new Map<string, Omit<AgentState, "hunger">>();
+  const phase = new Map<string, SleepPhase>();
+  const phaseOf = (id: string): SleepPhase => phase.get(id) ?? "awake";
+  /** Schlaeft: auf dem Weg ins Nest oder im Nest. Dann steht der Hunger still und Futter wartet. */
+  const isAsleep = (id: string) => phaseOf(id) === "to-nest" || phaseOf(id) === "asleep";
   const pollTimers = new Map<string, { timer: number; config: string }>();
   const polling = new Set<string>();
   /** Manuelle Eintraege und Fokus-Sitzungen je Agent (der Hub ist der einzige Schreiber). */
@@ -90,18 +108,35 @@ export function startHub(): () => void {
       roleLabel: roleInfo(agent.role).label,
       hunger: hunger.get(agent.id) ?? 1,
       views: buildViews(agent),
+      sleep: phaseOf(agent.id),
+      nest: extra.get(agent.id)?.nest ?? null,
+      home: extra.get(agent.id)?.home ?? null,
     };
     emitTo(agentLabel(agent.id), EVENT_AGENT_STATE, payload).catch(() => {});
   };
 
+  const persist = (id: string) =>
+    saveAgentState(id, { hunger: hunger.get(id) ?? 1, ...extra.get(id) }).catch((e) =>
+      console.warn("Speichern fehlgeschlagen:", e),
+    );
+
   const setHunger = (id: string, value: number) => {
     hunger.set(id, clamp(value));
-    saveAgentState(id, { hunger: hunger.get(id) ?? 1 }).catch((e) => console.warn("Speichern fehlgeschlagen:", e));
+    persist(id);
     const agent = find(id);
     if (agent) sendState(agent);
   };
 
   const feed = (id: string, amount: number, text: string | null) => {
+    if (isAsleep(id)) {
+      // Futter geht nicht verloren: es wartet und wird beim Aufwecken gutgeschrieben.
+      const data = extra.get(id) ?? {};
+      extra.set(id, { ...data, pendingFood: (data.pendingFood ?? 0) + amount });
+      persist(id);
+      const agent = find(id);
+      if (agent) sendState(agent);
+      return;
+    }
     setHunger(id, (hunger.get(id) ?? 1) + amount);
     const payload: AgentFedPayload = { text };
     emitTo(agentLabel(id), EVENT_AGENT_FED, payload).catch(() => {});
@@ -164,6 +199,27 @@ export function startHub(): () => void {
     saveValue(focusKey(id), sessions).catch((e) => console.warn("Speichern fehlgeschlagen:", e));
   };
 
+  const openNest = (agent: Agent, edit: boolean) => {
+    const nest = extra.get(agent.id)?.nest;
+    if (!nest) return;
+    invoke("open_nest_window", { id: agent.id, x: nest.x, y: nest.y, edit }).catch((e) =>
+      console.warn("Nest fehlgeschlagen:", e),
+    );
+  };
+
+  /** Alle sichtbaren Agenten schlafen schicken; schlafen schon alle, werden alle aufgeweckt. */
+  const sleepAll = () => {
+    const live = agents.filter((a) => a.visible);
+    const anyAwake = live.some((a) => phaseOf(a.id) === "awake");
+    for (const a of live) {
+      if (anyAwake && phaseOf(a.id) === "awake") {
+        emitTo(agentLabel(a.id), EVENT_AGENT_SLEEP_REQUEST, null).catch(() => {});
+      } else if (!anyAwake && isAsleep(a.id)) {
+        onCommand({ id: a.id, type: "wake" });
+      }
+    }
+  };
+
   const addEntry = (agent: Agent, amount: number, note: string) => {
     const tracker = trackerOf(agent.trackers, "entries");
     if (!tracker) return;
@@ -190,7 +246,12 @@ export function startHub(): () => void {
     const removed = agents.filter((old) => !list.some((a) => a.id === old.id));
     agents = list;
     for (const agent of list) {
-      if (!hunger.has(agent.id)) hunger.set(agent.id, (await loadAgentState(agent.id)).hunger);
+      if (!hunger.has(agent.id)) {
+        const { hunger: h, ...rest } = await loadAgentState(agent.id);
+        hunger.set(agent.id, h);
+        extra.set(agent.id, rest);
+        phase.set(agent.id, rest.sleeping && rest.nest ? "asleep" : "awake");
+      }
       if (!entryLogs.has(agent.id)) {
         const store = await getStore();
         entryLogs.set(agent.id, (await store.get<Entry[]>(entriesKey(agent.id))) ?? []);
@@ -201,6 +262,9 @@ export function startHub(): () => void {
     for (const agent of removed) {
       invoke("close_agent_window", { id: agent.id }).catch(() => {});
       hunger.delete(agent.id);
+      extra.delete(agent.id);
+      phase.delete(agent.id);
+      invoke("close_nest_window", { id: agent.id }).catch(() => {});
       entryLogs.delete(agent.id);
       focusLogs.delete(agent.id);
       focusRuns.delete(agent.id);
@@ -209,9 +273,11 @@ export function startHub(): () => void {
     for (const agent of list) {
       if (agent.visible) {
         invoke("open_agent_window", { id: agent.id }).catch((e) => console.warn("Fenster fehlgeschlagen:", e));
+        if (phaseOf(agent.id) === "asleep") openNest(agent, false);
         sendState(agent);
       } else {
         invoke("close_agent_window", { id: agent.id }).catch(() => {});
+        invoke("close_nest_window", { id: agent.id }).catch(() => {});
         stopFocus(agent.id);
       }
     }
@@ -245,6 +311,56 @@ export function startHub(): () => void {
         sendState(agent);
         break;
       }
+      case "sleep": {
+        if (phaseOf(agent.id) !== "awake") break;
+        const data = extra.get(agent.id) ?? {};
+        const nest = data.nest ?? validPoint(cmd.nest);
+        const home = validPoint(cmd.home);
+        if (!nest || !home) break;
+        extra.set(agent.id, { ...data, nest, home, sleeping: true });
+        phase.set(agent.id, "to-nest");
+        persist(agent.id);
+        openNest(agent, false);
+        sendState(agent);
+        break;
+      }
+      case "wake": {
+        if (!isAsleep(agent.id)) break;
+        const data = extra.get(agent.id) ?? {};
+        const pending = data.pendingFood ?? 0;
+        extra.set(agent.id, { ...data, sleeping: false, pendingFood: 0 });
+        phase.set(agent.id, "back");
+        invoke("close_nest_window", { id: agent.id }).catch(() => {});
+        persist(agent.id);
+        // Beim Aufwachen wird das Futter aus der Schlafzeit gutgeschrieben.
+        if (pending > 0) feed(agent.id, pending, "Das Futter von vorhin!");
+        else sendState(agent);
+        break;
+      }
+      case "arrived":
+        if (phaseOf(agent.id) === "to-nest") phase.set(agent.id, "asleep");
+        else if (phaseOf(agent.id) === "back") phase.set(agent.id, "awake");
+        else break;
+        sendState(agent);
+        break;
+      case "nest-edit": {
+        if (phaseOf(agent.id) !== "awake") break;
+        const data = extra.get(agent.id) ?? {};
+        const nest = data.nest ?? validPoint(cmd.nest);
+        if (!nest) break;
+        extra.set(agent.id, { ...data, nest });
+        openNest(agent, true);
+        break;
+      }
+      case "nest-set": {
+        const nest = validPoint(cmd.nest);
+        invoke("close_nest_window", { id: agent.id }).catch(() => {});
+        if (!nest || phaseOf(agent.id) !== "awake") break;
+        extra.set(agent.id, { ...(extra.get(agent.id) ?? {}), nest });
+        persist(agent.id);
+        sendState(agent);
+        break;
+      }
       case "focus-toggle":
         if (focusRuns.has(agent.id)) stopFocus(agent.id);
         else if (trackerOf(agent.trackers, "focus")) focusRuns.set(agent.id, { startedAt: Date.now(), credited: 0 });
@@ -257,6 +373,7 @@ export function startHub(): () => void {
     listen<T>(event, (e) => handler(e.payload)).then((un) => (alive ? unlisteners.push(un) : un()));
   };
 
+  subscribe<null>(EVENT_SLEEP_ALL, sleepAll);
   subscribe<boolean>("pause-changed", (value) => (paused = value));
   subscribe<AgentCommand>(EVENT_AGENT_CMD, onCommand);
   subscribe<null>(SETTINGS_CHANGED, () => {
@@ -295,7 +412,7 @@ export function startHub(): () => void {
     if (paused) return;
     for (const agent of agents) {
       // Deaktivierte Agenten bleiben satt, bis sie wieder eingeschaltet werden.
-      if (!agent.visible) continue;
+      if (!agent.visible || phaseOf(agent.id) !== "awake") continue;
       setHunger(agent.id, (hunger.get(agent.id) ?? 1) - elapsed / (hungerHours * 60 * 60 * 1000));
     }
   }, TICK_MS);

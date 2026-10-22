@@ -4,15 +4,17 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, PhysicalPosition, PhysicalSize, Window } from "@tauri-apps/api/window";
 import { Pet } from "./Pet";
 import { Panel } from "./Panel";
-import { aimTarget, measureWindow, moodOf, useWalker, WindowMeasure } from "./behavior";
+import { aimTarget, defaultNest, measureWindow, moodOf, sleepSpot, useWalker, WindowMeasure } from "./behavior";
 import {
   AgentCommand,
   AgentFedPayload,
   AgentStatePayload,
   EVENT_AGENT_CMD,
   EVENT_AGENT_FED,
+  EVENT_AGENT_SLEEP_REQUEST,
   EVENT_AGENT_STATE,
   EVENT_GHOST_LOOK,
+  EVENT_SLEEP_ALL,
   HUB_LABEL,
 } from "./protocol";
 import { PetState } from "./sprites";
@@ -54,14 +56,51 @@ export function AgentWindow({ id }: Props) {
   const hunger = info?.hunger ?? 1;
   const mood = moodOf(hunger);
 
-  const canWalk = !paused && !override && !eating && !panelOpen;
-  const { walking, facing, walkTo, stop } = useWalker(canWalk);
+  const sleep = info?.sleep ?? "awake";
+  const sleepWalk = sleep === "to-nest" || sleep === "back";
+
+  const canWalk = !paused && !override && !eating && !panelOpen && sleep === "awake";
+  const { walking, facing, walkTo, walkToPos, stop } = useWalker(canWalk || sleepWalk);
 
   const state: PetState = paused
     ? "sleep"
-    : override ?? (eating ? "eat" : walking ? "walk" : mood === "sad" ? "sad" : "idle");
+    : override ?? (sleep === "asleep" ? "sleep" : eating ? "eat" : walking ? "walk" : mood === "sad" ? "sad" : "idle");
 
   const command = (cmd: AgentCommand) => emitTo(HUB_LABEL, EVENT_AGENT_CMD, cmd).catch(() => {});
+
+  const infoRef = useRef(info);
+  infoRef.current = info;
+  const panelOpenRef = useRef(panelOpen);
+  panelOpenRef.current = panelOpen;
+
+  /** Klappt das Panel zu und wartet, bis das Fenster wieder die kleine Hoehe hat (Position ist erst dann verlaesslich). */
+  const settleClosed = async () => {
+    if (!panelOpenRef.current) return;
+    setPanelOpen(false);
+    const win = getCurrentWindow();
+    const scale = await win.scaleFactor();
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      if ((await win.outerSize()).height <= Math.round(CLOSED_H * scale) + 2) return;
+    }
+  };
+
+  /** Schlafen gehen: Platz und Nest an den Hub melden, der den Gang ins Nest anordnet. */
+  const goToSleep = async () => {
+    if (infoRef.current?.sleep !== "awake") return;
+    await settleClosed();
+    stop();
+    const win = getCurrentWindow();
+    const pos = await win.outerPosition();
+    const nest = infoRef.current?.nest ?? (await defaultNest());
+    if (nest) command({ id, type: "sleep", home: { x: pos.x, y: pos.y }, nest });
+  };
+
+  const editNest = async () => {
+    await settleClosed();
+    const nest = infoRef.current?.nest ?? (await defaultNest());
+    if (nest) command({ id, type: "nest-edit", nest });
+  };
 
   const say = (text: string) => {
     setBubble(text);
@@ -74,6 +113,40 @@ export function AgentWindow({ id }: Props) {
     window.clearTimeout(eatTimer.current);
     eatTimer.current = window.setTimeout(() => setEating(false), EAT_MS);
   };
+
+  const goToSleepRef = useRef(goToSleep);
+  goToSleepRef.current = goToSleep;
+
+  // Schlafphasen: ins Nest laufen, nach dem Aufwecken zurueck an den Platz. Nach einem App-Start im Schlaf
+  // wird das Tier direkt ins Nest gesetzt.
+  const snapped = useRef(false);
+  useEffect(() => {
+    const cur = infoRef.current;
+    if (!cur) return;
+    let cancelled = false;
+    const arrive = (ok: boolean) => {
+      if (ok && !cancelled) command({ id, type: "arrived" });
+    };
+    // Die Ziele gelten fuer das kleine Fenster: erst das Panel zuklappen, dann laufen.
+    if (cur.sleep === "to-nest" && cur.nest) {
+      const nest = cur.nest;
+      settleClosed()
+        .then(() => sleepSpot(nest))
+        .then((spot) => (cancelled ? false : walkToPos(spot)))
+        .then(arrive);
+    } else if (cur.sleep === "back" && cur.home) {
+      const home = cur.home;
+      settleClosed()
+        .then(() => (cancelled ? false : walkToPos(home)))
+        .then(arrive);
+    } else if (cur.sleep === "asleep" && cur.nest && !snapped.current) {
+      sleepSpot(cur.nest).then((spot) => getCurrentWindow().setPosition(new PhysicalPosition(spot.x, spot.y)));
+    }
+    snapped.current = true;
+    return () => {
+      cancelled = true;
+    };
+  }, [info?.sleep, info !== null]);
 
   // Zustand und Futter kommen vom Hub; danach melden wir uns beim Hub, damit er den Zustand schickt.
   const eatRef = useRef(eat);
@@ -91,6 +164,7 @@ export function AgentWindow({ id }: Props) {
         if (e.payload.text) sayRef.current(e.payload.text);
       }),
       listen<boolean>("pause-changed", (e) => setPaused(e.payload)),
+      listen(EVENT_AGENT_SLEEP_REQUEST, () => goToSleepRef.current()),
     ]);
     unlisteners.then(() => {
       if (alive) command({ id, type: "ready" });
@@ -144,6 +218,10 @@ export function AgentWindow({ id }: Props) {
       else if (e.key === "f") command({ id, type: "dev-feed" });
       else if (e.key === "h") command({ id, type: "dev-hunger", delta: -0.2 });
       else if (e.key === "g") command({ id, type: "poll-now" });
+      else if (e.key === "s") {
+        if (infoRef.current?.sleep === "awake") goToSleepRef.current();
+        else command({ id, type: "wake" });
+      } else if (e.key === "S") emitTo(HUB_LABEL, EVENT_SLEEP_ALL, null).catch(() => {});
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -151,6 +229,9 @@ export function AgentWindow({ id }: Props) {
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    // Auf dem Weg ins Nest oder zurueck laesst sich das Tier nicht anfassen.
+    const phase = infoRef.current?.sleep;
+    if (phase === "to-nest" || phase === "back") return;
     stop();
     // Capture: Bewegung und Loslassen kommen auch an, wenn die Maus das kleine Fenster verlaesst.
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -231,6 +312,10 @@ export function AgentWindow({ id }: Props) {
           hunger={hunger}
           mood={mood}
           paused={paused}
+          sleep={sleep}
+          onSleep={goToSleep}
+          onWake={() => command({ id, type: "wake" })}
+          onNestEdit={editNest}
           views={info.views}
           onEntry={(amount, note) => command({ id, type: "entry", amount, note })}
           onUndo={() => command({ id, type: "entry-undo" })}

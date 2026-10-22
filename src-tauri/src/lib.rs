@@ -10,9 +10,19 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_store::StoreExt;
 
 const DEFAULT_HOTKEY: &str = "Ctrl+Shift+P";
+const DEFAULT_SLEEP_HOTKEY: &str = "Ctrl+Shift+S";
 
-/// Aktuell registrierter Hotkey zum Ein-/Ausblenden.
-struct Hotkey(Mutex<Option<Shortcut>>);
+/// Die beiden globalen Hotkeys.
+#[derive(Clone, Copy)]
+enum HotkeyKind {
+    /// Tiere ein- und ausblenden
+    Toggle,
+    /// alle Tiere schlafen schicken bzw. aufwecken
+    SleepAll,
+}
+
+/// Aktuell registrierte Hotkeys, Index nach HotkeyKind.
+struct Hotkeys(Mutex<[Option<Shortcut>; 2]>);
 
 /// Menue und seine Check-Eintraege, geteilt zwischen Tray-Icon und Rechtsklick am Tier.
 struct PetMenu {
@@ -39,6 +49,12 @@ fn toggle_visible(app: &AppHandle) {
     let any_visible = windows.iter().any(|w| w.is_visible().unwrap_or(false));
     for window in windows {
         let _ = if any_visible { window.hide() } else { window.show() };
+    }
+    // Nester (wenn gerade Tiere schlafen) verschwinden und erscheinen mit den Tieren.
+    for (label, window) in app.webview_windows() {
+        if label.starts_with("nest-") {
+            let _ = if any_visible { window.hide() } else { window.show() };
+        }
     }
 }
 
@@ -87,6 +103,65 @@ async fn open_agent_window(app: AppHandle, id: String) -> Result<(), String> {
     window.show().map_err(|e| e.to_string())
 }
 
+/// Groesse des Nestfensters in logischen Pixeln (muss zu behavior.ts passen: NEST_W, NEST_H).
+const NEST_W: f64 = 150.0;
+const NEST_H: f64 = 72.0;
+
+/// Oeffnet das Nestfenster eines Agenten an der Position (x, y) in physischen Pixeln.
+/// edit = true: zum Verschieben (ziehbar, mit "Fertig"); sonst klickdurchlaessig, nur zur Anzeige.
+/// Ist schon ein Nest im selben Modus offen, passiert nichts.
+#[tauri::command]
+async fn open_nest_window(app: AppHandle, id: String, x: i32, y: i32, edit: bool) -> Result<(), String> {
+    if !valid_agent_id(&id) {
+        return Err(format!("Ungueltige Agent-Id: {id}"));
+    }
+    let label = format!("nest-{id}");
+    if let Some(existing) = app.get_webview_window(&label) {
+        let same_mode = existing.url().map(|u| u.query().unwrap_or("").contains("edit")).unwrap_or(false) == edit;
+        if same_mode {
+            return Ok(());
+        }
+        let _ = existing.destroy();
+    }
+    let query = if edit { format!("index.html?nest={id}&edit=1") } else { format!("index.html?nest={id}") };
+    let window = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(query.into()))
+        .title("CommitMull Nest")
+        .inner_size(NEST_W, NEST_H)
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .shadow(false)
+        .maximizable(false)
+        .minimizable(false)
+        .focused(edit)
+        .visible(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+    window
+        .set_position(tauri::PhysicalPosition::new(x, y))
+        .map_err(|e| e.to_string())?;
+    if !edit {
+        let _ = window.set_ignore_cursor_events(true);
+    }
+    window.show().map_err(|e| e.to_string())?;
+    // Das Tier soll ueber dem Nest liegen: sein Fenster wieder nach oben holen.
+    if !edit {
+        if let Some(pet) = app.get_webview_window(&format!("{AGENT_PREFIX}{id}")) {
+            let _ = pet.set_always_on_top(true);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn close_nest_window(app: AppHandle, id: String) {
+    if let Some(window) = app.get_webview_window(&format!("nest-{id}")) {
+        let _ = window.destroy();
+    }
+}
+
 #[tauri::command]
 fn close_agent_window(app: AppHandle, id: String) {
     if let Some(window) = app.get_webview_window(&format!("{AGENT_PREFIX}{id}")) {
@@ -132,39 +207,45 @@ fn get_paused(app: AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-/// Registriert den Hotkey neu. Der alte bleibt aktiv, wenn der neue ungueltig oder belegt ist.
-fn register_hotkey(app: &AppHandle, accelerator: &str) -> Result<(), String> {
+/// Registriert einen Hotkey neu. Der alte bleibt aktiv, wenn der neue ungueltig oder belegt ist.
+fn register_hotkey(app: &AppHandle, kind: HotkeyKind, accelerator: &str) -> Result<(), String> {
     let shortcut: Shortcut = accelerator
         .parse()
         .map_err(|e| format!("Ungueltiger Hotkey: {e}"))?;
-    let state = app.state::<Hotkey>();
+    let state = app.state::<Hotkeys>();
     let mut current = state.0.lock().map_err(|_| "Hotkey-Zustand gesperrt".to_string())?;
-    if *current == Some(shortcut) {
+    let slot = kind as usize;
+    if current[slot] == Some(shortcut) {
         return Ok(());
     }
     let shortcuts = app.global_shortcut();
     shortcuts
         .register(shortcut)
         .map_err(|e| format!("Hotkey konnte nicht registriert werden: {e}"))?;
-    if let Some(old) = current.take() {
+    if let Some(old) = current[slot].take() {
         let _ = shortcuts.unregister(old);
     }
-    *current = Some(shortcut);
+    current[slot] = Some(shortcut);
     Ok(())
 }
 
 /// Hotkey aus den gespeicherten Einstellungen (state.json), sonst der Standard.
-fn saved_hotkey(app: &AppHandle) -> String {
+fn saved_hotkey(app: &AppHandle, key: &str, default: &str) -> String {
     app.store("state.json")
         .ok()
         .and_then(|store| store.get("settings"))
-        .and_then(|settings| settings.get("hotkey").and_then(|h| h.as_str().map(String::from)))
-        .unwrap_or_else(|| DEFAULT_HOTKEY.to_string())
+        .and_then(|settings| settings.get(key).and_then(|h| h.as_str().map(String::from)))
+        .unwrap_or_else(|| default.to_string())
 }
 
+/// kind: "toggle" (Standard) oder "sleep".
 #[tauri::command]
-fn set_hotkey(app: AppHandle, hotkey: String) -> Result<(), String> {
-    register_hotkey(&app, &hotkey)
+fn set_hotkey(app: AppHandle, hotkey: String, kind: Option<String>) -> Result<(), String> {
+    let kind = match kind.as_deref() {
+        Some("sleep") => HotkeyKind::SleepAll,
+        _ => HotkeyKind::Toggle,
+    };
+    register_hotkey(&app, kind, &hotkey)
 }
 
 fn show_settings(app: &AppHandle) {
@@ -245,6 +326,9 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
             }
         }
         "home" => show_home(app),
+        "sleep-all" => {
+            let _ = app.emit_to("hub", "sleep-all", ());
+        }
         "settings" => show_settings(app),
         "quit" => app.exit(0),
         other => {
@@ -262,8 +346,17 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
+                .with_handler(|app, shortcut, event| {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    let is_sleep = app
+                        .try_state::<Hotkeys>()
+                        .and_then(|keys| keys.0.lock().ok().map(|k| k[HotkeyKind::SleepAll as usize] == Some(*shortcut)))
+                        .unwrap_or(false);
+                    if is_sleep {
+                        let _ = app.emit_to("hub", "sleep-all", ());
+                    } else {
                         toggle_visible(app);
                     }
                 })
@@ -280,6 +373,8 @@ pub fn run() {
             open_home,
             open_agent_window,
             close_agent_window,
+            open_nest_window,
+            close_nest_window,
             set_agent_menu,
             get_paused
         ])
@@ -306,11 +401,12 @@ pub fn run() {
                 None::<&str>,
             )?;
             let agents = Submenu::with_id(app, "agents", "Agenten", true)?;
+            let sleep_all = MenuItem::with_id(app, "sleep-all", "Alle schlafen schicken / aufwecken", true, None::<&str>)?;
             let home = MenuItem::with_id(app, "home", "Tiere verwalten", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Einstellungen", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>)?;
             let sep = PredefinedMenuItem::separator(app)?;
-            let menu = Menu::with_items(app, &[&home, &toggle, &agents, &pause, &autostart, &settings, &sep, &quit])?;
+            let menu = Menu::with_items(app, &[&home, &toggle, &agents, &sleep_all, &pause, &autostart, &settings, &sep, &quit])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -341,12 +437,17 @@ pub fn run() {
                 show_home(app.handle());
             }
 
-            app.manage(Hotkey(Mutex::new(None)));
-            let accelerator = saved_hotkey(app.handle());
-            if let Err(e) = register_hotkey(app.handle(), &accelerator) {
-                eprintln!("{e}");
-                if accelerator != DEFAULT_HOTKEY {
-                    let _ = register_hotkey(app.handle(), DEFAULT_HOTKEY);
+            app.manage(Hotkeys(Mutex::new([None, None])));
+            for (kind, key, default) in [
+                (HotkeyKind::Toggle, "hotkey", DEFAULT_HOTKEY),
+                (HotkeyKind::SleepAll, "sleepHotkey", DEFAULT_SLEEP_HOTKEY),
+            ] {
+                let accelerator = saved_hotkey(app.handle(), key, default);
+                if let Err(e) = register_hotkey(app.handle(), kind, &accelerator) {
+                    eprintln!("{e}");
+                    if accelerator != default {
+                        let _ = register_hotkey(app.handle(), kind, default);
+                    }
                 }
             }
 

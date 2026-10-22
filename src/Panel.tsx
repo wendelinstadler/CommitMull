@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Mood } from "./behavior";
+import { SleepPhase } from "./protocol";
 import { EntriesView, FocusView, formatAmount, TrackerViews } from "./trackers";
 
 interface Props {
@@ -8,6 +9,10 @@ interface Props {
   hunger: number;
   mood: Mood;
   paused: boolean;
+  sleep: SleepPhase;
+  onSleep: () => void;
+  onWake: () => void;
+  onNestEdit: () => void;
   views: TrackerViews;
   onEntry: (amount: number, note: string) => void;
   onUndo: () => void;
@@ -33,6 +38,10 @@ export function Panel({
   hunger,
   mood,
   paused,
+  sleep,
+  onSleep,
+  onWake,
+  onNestEdit,
   views,
   onEntry,
   onUndo,
@@ -53,7 +62,7 @@ export function Panel({
 
       <div className="panel-row">
         <span>Stimmung</span>
-        <strong>{paused ? "Schlaeft" : MOOD_LABEL[mood]}</strong>
+        <strong>{paused || sleep === "asleep" || sleep === "to-nest" ? "Schlaeft" : MOOD_LABEL[mood]}</strong>
       </div>
 
       <div className="panel-row">
@@ -69,6 +78,14 @@ export function Panel({
 
       <div className="panel-buttons">
         {onFeed && <button onClick={onFeed}>Futter geben (Dev)</button>}
+        {sleep === "awake" ? (
+          <button onClick={onSleep}>Schlafen schicken</button>
+        ) : (
+          <button onClick={onWake} disabled={sleep === "back"}>
+            {sleep === "back" ? "Kommt zurueck ..." : "Aufwecken"}
+          </button>
+        )}
+        {sleep === "awake" && <button onClick={onNestEdit}>Nest verschieben</button>}
         <button onClick={onTogglePause}>{paused ? "Weiter" : "Pausieren"}</button>
         <button onClick={onToggleAutostart}>Autostart: {autostart ? "an" : "aus"}</button>
         <button onClick={onSettings}>Einstellungen</button>

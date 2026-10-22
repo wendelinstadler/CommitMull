@@ -167,7 +167,7 @@ export function SettingsWindow() {
     setConfirmDelete(false);
   };
 
-  const onHotkeyKey = (e: React.KeyboardEvent) => {
+  const onHotkeyKey = (field: "hotkey" | "sleepHotkey") => (e: React.KeyboardEvent) => {
     e.preventDefault();
     if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
     const modifiers = [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Super"].filter(
@@ -179,7 +179,7 @@ export function SettingsWindow() {
       return;
     }
     setMessage(null);
-    updateGlobal("hotkey", [...modifiers, key].join("+"));
+    updateGlobal(field, [...modifiers, key].join("+"));
   };
 
   const save = async () => {
@@ -204,7 +204,9 @@ export function SettingsWindow() {
     }
     setBusy(true);
     try {
-      await invoke("set_hotkey", { hotkey: globals.hotkey });
+      if (globals.hotkey === globals.sleepHotkey) throw new Error("Die beiden Hotkeys muessen verschieden sein.");
+      await invoke("set_hotkey", { hotkey: globals.hotkey, kind: "toggle" });
+      await invoke("set_hotkey", { hotkey: globals.sleepHotkey, kind: "sleep" });
       await saveSettings(globals);
       await saveAgents(
         agents.map((a) => ({
@@ -489,7 +491,18 @@ export function SettingsWindow() {
                   className="hotkey"
                   readOnly
                   value={globals.hotkey}
-                  onKeyDown={onHotkeyKey}
+                  onKeyDown={onHotkeyKey("hotkey")}
+                  placeholder="Hier klicken, dann Tasten druecken"
+                />
+              </label>
+
+              <label>
+                <span>Hotkey: alle schlafen schicken / aufwecken</span>
+                <input
+                  className="hotkey"
+                  readOnly
+                  value={globals.sleepHotkey}
+                  onKeyDown={onHotkeyKey("sleepHotkey")}
                   placeholder="Hier klicken, dann Tasten druecken"
                 />
               </label>

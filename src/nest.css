@@ -1,0 +1,47 @@
+/* Nestfenster: Nest am unteren Rand, im Verschiebe-Modus mit Leiste oben. */
+
+.nest {
+  position: relative;
+  overflow: hidden;
+}
+
+.nest-art {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  image-rendering: pixelated;
+}
+
+.nest-art.edit {
+  cursor: move;
+}
+
+.nest-bar {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  height: 24px;
+  padding: 0 4px 0 8px;
+  background: #fffdf5;
+  border: 2px solid #7a3b4a;
+  border-radius: 6px;
+  color: #2b1620;
+  font: 600 11px "Segoe UI", sans-serif;
+  cursor: move;
+}
+
+.nest-bar button {
+  padding: 1px 8px;
+  background: #7a3b4a;
+  border: 0;
+  border-radius: 4px;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}

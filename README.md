@@ -6,7 +6,7 @@ Das Tier stirbt nie. Wenn es lange nichts zu fressen gibt, wird es nur traurig.
 
 ## Stand
 
-Schritt 6 bis 9 (Agenten-Verwaltung, Tierarten und Rollen, Hauptfenster, Tracker) sind im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
+Schritt 6 bis 10 (Agenten-Verwaltung, Tierarten und Rollen, Hauptfenster, Tracker, Schlafmodus mit Nest) sind im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
 
 Funktioniert:
 - Transparentes, rahmenloses Fenster, immer im Vordergrund, nicht in der Taskleiste
@@ -26,11 +26,14 @@ Funktioniert:
 - Tierarten: Nacktmull, Katze, Hund, Echse, Schlange, Vogel, Maulwurf (je Vorder- und Seitenansicht, alle Animationen)
 - Futterquellen pro Agent: GitHub-Commits, manuelle Eintraege (Ausgaben mit Wochenbudget oder Haken) und Fokus-Timer; Eintragen und Starten im Panel des Tiers
 - Finanz-Agent: Panel zeigt die Ausgaben dieser Woche gegen das Budget (z. B. 84 von 150 CHF), das Whiteboard am Tier wird gruen unter und rot ueber dem Budget
+- Schlafmodus: "Schlafen schicken" im Panel, das Tier laeuft zu seinem Nest, legt sich hin und schlaeft; sein Hunger steht still, eintreffendes Futter wird beim Aufwecken gutgeschrieben; "Aufwecken" schickt es zurueck an seinen Platz
+- Nest: "Nest verschieben" im Panel (ziehen, "Fertig"), die Position wird gespeichert; sichtbar nur, solange das Tier schlaeft
+- Alle Tiere auf einmal schlafen schicken oder aufwecken: Tray-Eintrag und Hotkey `Ctrl+Shift+S` (unter Allgemein aenderbar)
 - Rollen mit Accessoire: Informatiker (Laptop), Finanzen (Whiteboard mit Graph), Lernen (Buch), Fitness (Hantel), Gewohnheiten (Checkliste), Eigene (Accessoire frei)
 - GitHub-Anbindung: neue Pushes des eingetragenen Benutzers werden abgefragt (Standard alle 10 Minuten); jeder neue Commit bringt 25 % Futter, dazu eine Sprechblase "N Commits heute!"
 
 Noch nicht gebaut:
-- Schlafmodus und Nest (Schritt 10), gespeicherte Seiten und Terminal-Befehle (Schritt 11)
+- Gespeicherte Seiten und Terminal-Befehle (Schritt 11)
 - Pakete zum Teilen von Tieren und Agenten (Schritt 12, nur Daten, streng geprueft; Online-Marktplatz spaeter)
 - Laufen auf Fensterkanten (Schritt 13)
 - Installer und Release (Schritt 14)
@@ -66,6 +69,7 @@ npm run tauri build
 | Rechtsklick auf das Tier | Menue (wie im Tray) |
 | Linksklick auf das Tray-Icon | Tier ein- oder ausblenden |
 | `Ctrl+Shift+P` | Tier ein- oder ausblenden |
+| `Ctrl+Shift+S` | alle Tiere schlafen schicken oder aufwecken |
 
 ## Dev-Tasten
 
@@ -78,6 +82,8 @@ Nur im Dev-Modus, das Fenster braucht dafuer den Fokus (einmal anklicken):
 | `F` | Futter geben |
 | `H` | Hunger um 20 % senken |
 | `G` | GitHub sofort abfragen |
+| `S` | dieses Tier schlafen schicken oder aufwecken |
+| `Shift+S` | alle Tiere schlafen schicken oder aufwecken |
 
 Dazu im Dev-Modus: `http://localhost:1420/?sheet` im Browser zeigt alle Arten, Animationen und Accessoires nebeneinander (zum Justieren der Sprites).
 
@@ -94,6 +100,7 @@ src/
   AgentWindow.tsx   Fenster eines Tiers: Klick, Ziehen, Laufen, Panel, Vorschau
   Pet.tsx           Canvas, spielt die Animationen ab
   Home.tsx          Hauptfenster: Tierkarten mit Schalter
+  NestWindow.tsx    Nestfenster (Anzeige im Schlaf, Verschieben)
   trackers.ts       Tracker-Typen, Standardwerte, Panel-Anzeige (Wochenbudget, Fokuszeit)
   trackerPlugins.ts Vertrag fuer abfragende Tracker (GitHub)
   Panel.tsx         Status-Panel

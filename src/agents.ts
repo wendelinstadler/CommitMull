@@ -39,9 +39,23 @@ export function createAgent(name: string, species: Species, role: Role): Agent {
   };
 }
 
+/** Position in physischen Bildschirmpixeln (obere linke Ecke eines Fensters). */
+export interface Point {
+  x: number;
+  y: number;
+}
+
 export interface AgentState {
   /** 1 = satt, 0 = leer */
   hunger: number;
+  /** Nest (obere linke Ecke des Nestfensters); fehlt, bis der Agent zum ersten Mal schlafen geht. */
+  nest?: Point;
+  /** Fensterposition des Tiers vor dem Schlafengehen, dorthin laeuft es beim Aufwecken zurueck. */
+  home?: Point;
+  /** Schlaeft (auf dem Weg zum Nest oder im Nest). */
+  sleeping?: boolean;
+  /** Futter, das waehrend des Schlafs eintraf, wird beim Aufwecken gutgeschrieben (Anteil am Hunger). */
+  pendingFood?: number;
 }
 
 export const AGENTS_CHANGED = "agents-changed";

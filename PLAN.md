@@ -58,11 +58,16 @@ Typen, Standardwerte und die Berechnung der Panel-Anzeige liegen in `src/tracker
 - Arten: Nacktmull, Katze, Hund, Echse, Schlange, Vogel, Maulwurf. Pixel-Art laesst sich nur mit Augen
   beurteilen: Die Arten kommen in Gruppen, du schaust jeweils drauf und wir justieren nach.
 
-### Schlafmodus und Nest
-- Befehl "schlafen schicken": Tier laeuft zum Nest, legt sich hin, Hunger steht still. Aufwecken: aufstehen, zurueck.
-- Futter, das waehrend des Schlafs eintrifft, wird nicht verworfen, sondern beim Aufwachen gutgeschrieben.
-- Nest: Position pro Agent gespeichert, Standard unten am Bildschirmrand, verschiebbar.
-- "Alle schlafen schicken" ueber Tray-Menue und eigenen Hotkey.
+### Schlafmodus und Nest (umgesetzt)
+- Phasen pro Agent (nur der Hub kennt sie): `awake`, `to-nest`, `asleep`, `back`. Gespeichert werden Nest, Platz vor dem Schlafen und
+  "schlaeft" in `agentState:<id>`; nach einem App-Neustart im Schlaf wird das Tier direkt ins Nest gesetzt.
+- Ablauf: Panel "Schlafen schicken" (oder Tray/Hotkey) -> Tierfenster klappt das Panel zu und meldet seine Position und das Nest ->
+  Hub oeffnet das Nestfenster (`nest-<id>`, klickdurchlaessig) -> Tier laeuft hin, liegt im Nest. "Aufwecken": Nest verschwindet,
+  Tier laeuft an den alten Platz. Waehrend des Schlafs steht der Hunger still, eintreffendes Futter wartet und wird beim Aufwecken gutgeschrieben.
+- Nest verschieben: Panel "Nest verschieben" blendet das Nestfenster mit "Fertig" ein; ziehen, "Fertig" speichert die Position.
+  Standard: unten am Bildschirmrand (Arbeitsbereich) unter dem Standort des Tiers.
+- "Alle schlafen schicken / aufwecken": Tray-Eintrag und eigener Hotkey (Standard Strg+Umschalt+S, einstellbar unter Allgemein).
+  Schlafen nicht alle, gehen alle sichtbaren Tiere schlafen, sonst werden alle geweckt.
 
 ### Aktionen und Sicherheit
 - **Gespeicherte Seiten:** Oeffnen im Standardbrowser ueber das Opener-Plugin, nur `http` und `https`.
@@ -91,7 +96,7 @@ Hunger und GitHub-Zustand wandern in die neuen Schluessel. Die alten Schluessel 
 7. Sprite-System: 7 Arten (Vierbeiner als Daten, Vogel und Schlange eigene Zeichner) und 6 Rollen mit Accessoires  (im Test)
 8. Hauptfenster als Startseite der App: alle Tiere als Karten mit Schalter, "Neues Tier", "Bearbeiten"  (im Test)
 9. Tracker-System: GitHub portiert, manuelles Eintragen (Ausgaben mit Wochenbudget, Haken), Fokus-Timer; Whiteboard zeigt den Budgetstand  (im Test)
-10. Schlafmodus + Nest, "Alle schlafen" per Tray und Hotkey
+10. Schlafmodus + Nest, "Alle schlafen" per Tray und Hotkey  (im Test)
 11. Aktionen: gespeicherte Seiten, Terminal-Befehle mit Bestaetigung
 12. Pakete: Tiere und Agenten als Datei exportieren und importieren, mit strenger Pruefung (siehe unten)
 13. Fensterkanten (WinAPI EnumWindows), faellt runter, wenn das Fenster verschwindet

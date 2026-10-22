@@ -7,11 +7,14 @@ export interface GlobalSettings {
   hungerHours: number;
   /** Tastenkombination zum Ein-/Ausblenden, z. B. "Ctrl+Shift+P". */
   hotkey: string;
+  /** Tastenkombination "Alle schlafen schicken / aufwecken". */
+  sleepHotkey: string;
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
   hungerHours: 8,
   hotkey: "Ctrl+Shift+P",
+  sleepHotkey: "Ctrl+Shift+S",
 };
 
 export const POLL_OPTIONS = [1, 5, 10, 30, 60];
@@ -26,6 +29,7 @@ export async function loadSettings(): Promise<GlobalSettings> {
   return {
     hungerHours: saved?.hungerHours ?? DEFAULT_SETTINGS.hungerHours,
     hotkey: saved?.hotkey ?? DEFAULT_SETTINGS.hotkey,
+    sleepHotkey: saved?.sleepHotkey ?? DEFAULT_SETTINGS.sleepHotkey,
   };
 }
 
