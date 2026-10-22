@@ -23,9 +23,47 @@ fn toggle_visible(app: &AppHandle) {
     }
 }
 
+/// Setzt das Fenster in die untere rechte Ecke des Arbeitsbereichs (ueber der Taskleiste).
+fn place_bottom_right(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else { return };
+    let Ok(Some(monitor)) = window.primary_monitor() else { return };
+    let Ok(size) = window.outer_size() else { return };
+    let area = monitor.work_area();
+    let x = area.position.x + area.size.width as i32 - size.width as i32;
+    let y = area.position.y + area.size.height as i32 - size.height as i32;
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
 #[tauri::command]
 fn show_pet_menu(window: tauri::Window, menu: tauri::State<PetMenu>) {
     let _ = window.popup_menu(&menu.menu);
+}
+
+/// Pause setzen (vom Panel aus); das Haekchen im Menue und das Frontend bleiben synchron.
+#[tauri::command]
+fn set_paused(app: AppHandle, menu: tauri::State<PetMenu>, paused: bool) {
+    let _ = menu.pause.set_checked(paused);
+    let _ = app.emit("pause-changed", paused);
+}
+
+#[tauri::command]
+fn get_autostart(app: AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+/// Gibt den tatsaechlichen Zustand zurueck (bei Fehler der alte).
+#[tauri::command]
+fn set_autostart(app: AppHandle, menu: tauri::State<PetMenu>, enabled: bool) -> bool {
+    let launcher = app.autolaunch();
+    let result = if enabled { launcher.enable() } else { launcher.disable() };
+    let actual = if result.is_ok() { enabled } else { !enabled };
+    let _ = menu.autostart.set_checked(actual);
+    actual
+}
+
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    app.exit(0);
 }
 
 fn handle_menu_event(app: &AppHandle, id: &str) {
@@ -56,6 +94,7 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -66,7 +105,13 @@ pub fn run() {
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![show_pet_menu])
+        .invoke_handler(tauri::generate_handler![
+            show_pet_menu,
+            set_paused,
+            get_autostart,
+            set_autostart,
+            quit_app
+        ])
         .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
         .setup(|app| {
             let toggle = MenuItem::with_id(app, "toggle", "Anzeigen / Ausblenden", true, None::<&str>)?;
@@ -103,6 +148,8 @@ pub fn run() {
                 .build(app)?;
 
             app.manage(PetMenu { menu, pause, autostart });
+
+            place_bottom_right(app.handle());
 
             let hotkey = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyP);
             if let Err(e) = app.global_shortcut().register(hotkey) {

@@ -19,8 +19,6 @@ interface Pose {
   bodyDy: number;
   /** Anheben der Beine in Pixeln: links, rechts */
   legs: [number, number];
-  /** Seitliches Wackeln des ganzen Tiers in Pixeln */
-  sway: number;
   eyes: "open" | "closed" | "sad";
   mouthOpen: boolean;
   tear: boolean;
@@ -32,7 +30,6 @@ interface Pose {
 const base: Pose = {
   bodyDy: 0,
   legs: [0, 0],
-  sway: 0,
   eyes: "open",
   mouthOpen: false,
   tear: false,
@@ -42,14 +39,8 @@ const base: Pose = {
 
 const pose = (p: Partial<Pose>): Pose => ({ ...base, ...p });
 
-export const FRAMES: Record<PetState, Pose[]> = {
+export const FRAMES: Record<Exclude<PetState, "walk">, Pose[]> = {
   idle: [pose({}), pose({ bodyDy: 1 })],
-  walk: [
-    pose({ legs: [3, 0], sway: -1 }),
-    pose({ bodyDy: 1 }),
-    pose({ legs: [0, 3], sway: 1 }),
-    pose({ bodyDy: 1 }),
-  ],
   sleep: [
     pose({ bodyDy: 3, eyes: "closed", zzz: 1 }),
     pose({ bodyDy: 4, eyes: "closed", zzz: 2 }),
@@ -102,13 +93,15 @@ function drawZ(ctx: Ctx, x: number, y: number, s: number) {
 
 /** Zeichnet den Nacktmull in Vorderansicht (schaut den Betrachter an) auf eine 64x64-Flaeche. */
 export function drawPet(ctx: Ctx, state: PetState, frame: number) {
+  if (state === "walk") {
+    drawWalk(ctx, frame);
+    return;
+  }
   const frames = FRAMES[state];
   const p = frames[frame % frames.length];
   const dy = p.bodyDy;
 
   ctx.clearRect(0, 0, SIZE, SIZE);
-  ctx.save();
-  ctx.translate(p.sway, 0);
 
   // Beine (hinter dem Koerper)
   const legX = [21, 40];
@@ -168,8 +161,6 @@ export function drawPet(ctx: Ctx, state: PetState, frame: number) {
   }
   if (p.tear) rect(ctx, 25, 28 + dy, 1, 3, C.tear);
 
-  ctx.restore();
-
   // Schlafen
   if (p.zzz >= 1) drawZ(ctx, 46, 12, 4);
   if (p.zzz >= 2) drawZ(ctx, 51, 6, 5);
@@ -181,4 +172,52 @@ export function drawPet(ctx: Ctx, state: PetState, frame: number) {
     rect(ctx, p.food.x, p.food.y, 5, 1, C.foodLight);
     rect(ctx, p.food.x, p.food.y, 1, 5, C.foodLight);
   }
+}
+
+/** Beinhub (vorne rechts, vorne links, hinten rechts, hinten links) und Koerperhub pro Lauf-Frame. */
+const WALK_FRAMES: { legs: [number, number, number, number]; bodyDy: number }[] = [
+  { legs: [3, 0, 0, 3], bodyDy: 0 },
+  { legs: [0, 0, 0, 0], bodyDy: 1 },
+  { legs: [0, 3, 3, 0], bodyDy: 0 },
+  { legs: [0, 0, 0, 0], bodyDy: 1 },
+];
+
+/** Seitenansicht beim Laufen, blickt nach rechts (Spiegeln uebernimmt das CSS). */
+function drawWalk(ctx: Ctx, frame: number) {
+  const { legs, bodyDy: dy } = WALK_FRAMES[frame % WALK_FRAMES.length];
+
+  ctx.clearRect(0, 0, SIZE, SIZE);
+
+  // Schwanz
+  rect(ctx, 5, 38 + dy, 5, 2, C.outline);
+  rect(ctx, 6, 38 + dy, 3, 1, C.shade);
+
+  // Beine (hinter dem Koerper)
+  const legX = [43, 37, 17, 11];
+  legs.forEach((lift, i) => {
+    const h = Math.max(2, 6 - lift - Math.min(dy, 2));
+    const y = 48 + dy + lift;
+    rect(ctx, legX[i], y, 4, h, C.outline);
+    rect(ctx, legX[i] + 1, y, 2, h - 1, C.skin);
+  });
+
+  // Koerper
+  ellipse(ctx, 30, 38 + dy, 22, 13, C.outline);
+  ellipse(ctx, 30, 38 + dy, 20, 11, C.skin);
+  for (const [x, y] of [[20, 32], [26, 30], [33, 31], [24, 40], [31, 42], [38, 40]]) {
+    rect(ctx, x, y + dy, 3, 1, C.shade);
+  }
+
+  // Kopf
+  ellipse(ctx, 47, 37 + dy, 10, 9, C.outline);
+  ellipse(ctx, 47, 37 + dy, 8, 7, C.skin);
+  rect(ctx, 41, 30 + dy, 2, 2, C.shade); // Ohr
+
+  // Zaehne und Mund
+  rect(ctx, 54, 41 + dy, 2, 4, C.teeth);
+  rect(ctx, 56, 41 + dy, 2, 4, C.teeth);
+  rect(ctx, 54, 45 + dy, 4, 1, C.outline);
+
+  // Auge
+  rect(ctx, 51, 33 + dy, 2, 2, C.eye);
 }
