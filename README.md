@@ -1,4 +1,4 @@
-﻿# CommitMull
+# CommitMull
 
 Ein Desktop-Haustier fuer Windows: ein Pixel-Nacktmull, der auf dem Bildschirm lebt und von deinen GitHub-Commits gefuettert wird. Gebaut mit Tauri 2, React und TypeScript.
 
@@ -6,7 +6,7 @@ Das Tier stirbt nie. Wenn es lange nichts zu fressen gibt, wird es nur traurig.
 
 ## Stand
 
-Schritt 6 bis 11 (Verwaltung, Tierarten und Rollen, Hauptfenster, Tracker, Schlafmodus mit Nest, Modi und neues Panel mit Aufgaben) sind im Test; der KI-Assistent (Schritt 12) folgt (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
+Schritt 6 bis 11 (Verwaltung, Tierarten und Rollen, Hauptfenster, Tracker, Schlafmodus mit Nest, Modi und neues Panel mit Aufgaben) sind im Test; Schritt 12 (KI-Assistent) ist ebenfalls im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
 
 Funktioniert:
 - Transparentes, rahmenloses Fenster, immer im Vordergrund, nicht in der Taskleiste
@@ -21,6 +21,7 @@ Funktioniert:
 - Autostart mit Windows (schaltbar)
 - Ein Tier, mehrere Modi: Informatiker, Finanzen, Lernen ... pro Tier, im Panel mit einem Klick wechselbar; jeder Modus hat sein Accessoire, seine Futterquellen und seine Daten
 - Neues Panel (Klick aufs Tier): eigenes Fenster neben dem Tier mit den Reitern Heute (Hinweise, Eintraege, Fokus, Depot), Aufgaben (Liste, Erledigen fuettert) und Mehr (Schlafen, Nest, Einstellungen, Beenden)
+- KI-Assistent (Claude, eigener API-Schluessel, in den Einstellungen unter Allgemein einzurichten): Chat im aktuellen Modus, Aufgaben in Schritte aufteilen, Tagesplan, Tagesrueckblick, Bewegungen im Depot erklaeren. Der Schluessel liegt im Windows-Anmeldeinformationsspeicher; gesendet wird nur, was die jeweilige Funktion ankuendigt, und nur nach dem Einschalten. Abgerechnet wird nach Verbrauch bei Anthropic (rund 1 Rappen pro Antwort mit Opus, weniger mit Sonnet oder Haiku)
 - Aufgabenliste pro Tier; jede erledigte Aufgabe fuettert einmal
 - Finanz-Hinweise: grosse Kursbewegungen (Depot ab 3 %, Position ab 5 % am Tag) melden sich als Sprechblase und im Panel, auch wenn das Tier gerade in einem anderen Modus arbeitet
 - Hauptfenster als Startseite: alle Tiere als Karten, Schalter zum Aktivieren, "Neues Tier", "Bearbeiten"; Schliessen schickt die App ins Tray ("Tiere verwalten" im Tray-Menue oeffnet es wieder), beim Start mit Windows bleibt es zu
@@ -113,6 +114,7 @@ src/
   trackerEditors.tsx  Sperrliste und Depot in der Verwaltung
   panel/            Panel-Fenster: PanelWindow (Huelle, Reiter), TodayTab, TodoTab, MoreTab, panel.css
   workday.ts        Aufgaben und Hinweise (reine Logik)
+  ai.ts             KI-Assistent: Prompts, Verlauf, Schritte lesen
   SettingsWindow.tsx  Agenten-Verwaltung und globale Einstellungen
   roles.ts          Rollen (Vorlagen) mit Accessoire und Standard-Tracker
   species.ts        Tierarten: Paletten, Formen, Ankerpunkte
@@ -131,6 +133,7 @@ src/
 src-tauri/
   src/apps.rs     Programmfenster auflisten und sanft schliessen (Programm-Sperre)
   src/quotes.rs   Kursabfrage (Yahoo Finance)
+  src/ai.rs       Claude-Anfragen und Schluesselspeicher (Windows-Anmeldeinformationen)
   src/lib.rs        Tray, Menue, Hotkey, Autostart, Agent-Fenster, Befehle
 ```
 

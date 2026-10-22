@@ -15,11 +15,12 @@ import {
   EVENT_AGENT_STATE,
   HUB_LABEL,
 } from "../protocol";
+import { AssistantTab } from "./AssistantTab";
 import { MoreTab } from "./MoreTab";
 import { TodayTab } from "./TodayTab";
 import { TodoTab } from "./TodoTab";
 
-type Tab = "today" | "todo" | "more";
+type Tab = "today" | "todo" | "assistant" | "more";
 
 const MOOD_LABEL = { happy: "Froehlich", ok: "Geht so", sad: "Hungrig" } as const;
 
@@ -28,7 +29,7 @@ const tabKey = (id: string) => `panelTab:${id}`;
 function savedTab(id: string): Tab {
   try {
     const t = localStorage.getItem(tabKey(id));
-    if (t === "today" || t === "todo" || t === "more") return t;
+    if (t === "today" || t === "todo" || t === "assistant" || t === "more") return t;
   } catch {
     /* kein Speicher: egal */
   }
@@ -45,6 +46,8 @@ export function PanelWindow({ id }: { id: string }) {
   const [paused, setPaused] = useState(false);
   const [autostart, setAutostart] = useState(false);
   const hadFocus = useRef(false);
+  /** Laeuft eine KI-Anfrage, bleibt das Panel beim Wegklicken offen, damit die Antwort nicht verloren geht. */
+  const busy = useRef(false);
 
   const send = (cmd: AgentCommand) => emitTo(HUB_LABEL, EVENT_AGENT_CMD, cmd).catch(() => {});
   const close = () => invoke("close_panel_window", { id }).catch(() => {});
@@ -72,14 +75,14 @@ export function PanelWindow({ id }: { id: string }) {
   useEffect(() => {
     hadFocus.current = document.hasFocus();
     const onFocus = () => (hadFocus.current = true);
-    const onBlur = () => hadFocus.current && close();
+    const onBlur = () => hadFocus.current && !busy.current && close();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     window.addEventListener("focus", onFocus);
     window.addEventListener("blur", onBlur);
     window.addEventListener("keydown", onKey);
     const native = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
       if (focused) hadFocus.current = true;
-      else if (hadFocus.current) close();
+      else if (hadFocus.current && !busy.current) close();
     });
     return () => {
       window.removeEventListener("focus", onFocus);
@@ -105,6 +108,7 @@ export function PanelWindow({ id }: { id: string }) {
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "today", label: "Heute" },
     { id: "todo", label: "Aufgaben", count: open },
+    { id: "assistant", label: "Assistent" },
     { id: "more", label: "Mehr" },
   ];
 
@@ -151,7 +155,8 @@ export function PanelWindow({ id }: { id: string }) {
 
         <div className="pw-body" role="tabpanel">
           {tab === "today" && <TodayTab info={info} send={send} />}
-          {tab === "todo" && <TodoTab info={info} send={send} />}
+          {tab === "todo" && <TodoTab info={info} send={send} onBusy={(b) => (busy.current = b)} />}
+          {tab === "assistant" && <AssistantTab info={info} onBusy={(b) => (busy.current = b)} />}
           {tab === "more" && (
             <MoreTab
               info={info}

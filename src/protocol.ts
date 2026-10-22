@@ -45,6 +45,15 @@ export interface ModeInfo {
   accessory: Accessory;
 }
 
+/** Stand des KI-Assistenten, vom Hub aus Einstellungen und Schluesselspeicher berechnet. */
+export interface AiStatus {
+  /** Eingeschaltet und Schluessel vorhanden: Anfragen sind moeglich. */
+  ready: boolean;
+  enabled: boolean;
+  hasKey: boolean;
+  model: string;
+}
+
 export interface AgentStatePayload {
   id: string;
   name: string;
@@ -58,6 +67,7 @@ export interface AgentStatePayload {
   /** Aufgaben des Tiers (alle) und seine letzten Hinweise. */
   todos: Todo[];
   alerts: Alert[];
+  ai: AiStatus;
   /** 1 = satt, 0 = leer */
   hunger: number;
   /** Anzeige der Tracker im Panel (Wochenbudget, Fokuszeit ...). */

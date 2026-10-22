@@ -102,6 +102,9 @@ export function startHub(): () => void {
   let alive = true;
   let paused = false;
   let hungerHours = DEFAULT_SETTINGS.hungerHours;
+  let aiEnabled = DEFAULT_SETTINGS.aiEnabled;
+  let aiModel = DEFAULT_SETTINGS.aiModel;
+  let aiHasKey = false;
   let agents: Agent[] = [];
 
   // --- Ebene Tier
@@ -170,6 +173,7 @@ export function startHub(): () => void {
       activeMode: mode.id,
       todos: todos.get(agent.id) ?? [],
       alerts: alerts.get(agent.id) ?? [],
+      ai: { ready: aiEnabled && aiHasKey, enabled: aiEnabled, hasKey: aiHasKey, model: aiModel },
       hunger: hunger.get(agent.id) ?? 1,
       views: buildViews(mode),
       sleep: phaseOf(agent.id),
@@ -507,6 +511,12 @@ export function startHub(): () => void {
       todos.delete(agent.id);
       alerts.delete(agent.id);
       deleteAgentData(agent).catch((e) => console.warn("Aufraeumen fehlgeschlagen:", e));
+      // Der Chatverlauf liegt im lokalen Browserspeicher des Panels (gleicher Ursprung wie der Hub).
+      try {
+        for (const key of Object.keys(localStorage)) if (key.startsWith(`chat:${agent.id}:`) || key === `panelTab:${agent.id}`) localStorage.removeItem(key);
+      } catch {
+        /* kein Speicher: egal */
+      }
     }
     for (const agent of list) {
       if (agent.visible) {
@@ -660,8 +670,17 @@ export function startHub(): () => void {
   subscribe<null>(EVENT_SLEEP_ALL, sleepAll);
   subscribe<boolean>("pause-changed", (value) => (paused = value));
   subscribe<AgentCommand>(EVENT_AGENT_CMD, onCommand);
+  /** Liest Einstellungen und Schluesselstatus neu und gibt sie allen Fenstern weiter. */
+  const refreshSettings = async () => {
+    const s = await loadSettings();
+    hungerHours = s.hungerHours;
+    aiEnabled = s.aiEnabled;
+    aiModel = s.aiModel;
+    aiHasKey = await invoke<boolean>("ai_key_status").catch(() => false);
+    for (const agent of agents) sendState(agent);
+  };
   subscribe<null>(SETTINGS_CHANGED, () => {
-    loadSettings().then((s) => (hungerHours = s.hungerHours));
+    refreshSettings().catch((e) => console.warn("Einstellungen lesen fehlgeschlagen:", e));
   });
   subscribe<string>(EVENT_AGENT_TOGGLE, (id) => {
     const agent = find(id);
@@ -703,7 +722,11 @@ export function startHub(): () => void {
 
   (async () => {
     paused = await invoke<boolean>("get_paused");
-    hungerHours = (await loadSettings()).hungerHours;
+    const first = await loadSettings();
+    hungerHours = first.hungerHours;
+    aiEnabled = first.aiEnabled;
+    aiModel = first.aiModel;
+    aiHasKey = await invoke<boolean>("ai_key_status").catch(() => false);
     const list = await ensureAgents();
     if (alive) await applyAgents(list);
   })().catch((e) => console.error("Hub-Start fehlgeschlagen:", e));

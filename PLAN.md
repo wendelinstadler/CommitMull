@@ -112,7 +112,7 @@ Hunger und GitHub-Zustand wandern in die neuen Schluessel. Die alten Schluessel 
     dazu: Programm-Sperre im Fokus (sanftes Schliessen) und Investments (Depot, Kurse von Yahoo Finance)  (im Test)
 11. Begleiter im Arbeitsalltag, Teil 1: Tier mit mehreren Modi, neues Panel-Fenster mit Reitern (Heute, Aufgaben, Mehr), Aufgabenliste,
     Hinweise bei grossen Kursbewegungen  (im Test)
-12. Begleiter, Teil 2: KI-Assistent mit eigenem Anthropic-Schluessel (Chat im Modus, Aufgaben aufteilen, Tagesplan, Depot erklaeren, Tagesrueckblick)
+12. Begleiter, Teil 2: KI-Assistent mit eigenem Anthropic-Schluessel (Chat im Modus, Aufgaben aufteilen, Tagesplan, Depot erklaeren, Tagesrueckblick)  (im Test)
 13. Aktionen: gespeicherte Seiten, Terminal-Befehle mit Bestaetigung
 14. Pakete: Tiere und Agenten als Datei exportieren und importieren, mit strenger Pruefung (siehe unten)
 15. Fensterkanten (WinAPI EnumWindows), faellt runter, wenn das Fenster verschwindet
@@ -132,9 +132,24 @@ Ziel: Das Tier begleitet durch den Arbeitstag, nicht nur ein Zaehler. Entscheidu
 - **Aufgaben** gehoeren zum Tier (`todos:<id>`): hinzufuegen, abhaken, loeschen. Jede Aufgabe fuettert beim ersten Erledigen mit 10 %.
 - **Hinweise** (`alerts:<id>`): Nach jeder Kursabfrage prueft der Hub das Depot: Tagesbewegung des Depots ab 3 % oder einer Position ab 5 % (einstellbar, 0 = aus)
   ergibt einen Hinweis in der Liste und eine Sprechblase am Tier, zum selben Ausloeser hoechstens alle 3 Stunden. Auch im anderen Modus.
-- **KI (Schritt 12):** eigener API-Schluessel von console.anthropic.com (eine Anmeldung mit dem Claude-Abo ist in fremden Apps nicht moeglich), sicher im
+- **KI (Schritt 12, umgesetzt):** eigener API-Schluessel von console.anthropic.com (eine Anmeldung mit dem Claude-Abo ist in fremden Apps nicht moeglich), sicher im
   Windows-Anmeldeinformationsspeicher, Abfragen nur aus Rust. Funktionen: Chat im aktuellen Modus, Aufgaben aufteilen und Tagesplan, Depot-Bewegung erklaeren
   (sendet die Positionen, nur auf Klick), Tagesrueckblick. Alle KI-Funktionen sind aus, bis ein Schluessel eingetragen und die Weitergabe bestaetigt ist.
+
+### KI-Assistent im Detail
+- **Zugang:** API-Schluessel in den Einstellungen (Allgemein, KI-Assistent). Er geht per `ai_set_key` direkt in den Windows-Anmeldeinformationsspeicher
+  (Crate `keyring`), das Webview kann ihn weder lesen noch senden, nur "vorhanden?" abfragen (`ai_key_status`). Eingeschaltet wird der Assistent separat mit
+  einer Bestaetigung, was gesendet wird; "Verbindung testen" schickt eine winzige Anfrage.
+- **Anfragen nur aus Rust** (`src-tauri/src/ai.rs`, roher HTTP-Aufruf, Rust hat kein offizielles SDK): nur `api.anthropic.com`, nur die Modelle
+  Opus 5.5 (Standard), Sonnet 5.5 und Haiku 5.5, Rollen, Anzahl und Groessen geprueft, `effort: low`, keine Sampling-Parameter. Bei Opus und Sonnet wird die serverseitige
+  Ausweichroute (`fallbacks: "default"`) mitgeschickt; lehnt die API sie mit 400 ab, folgt einmal dieselbe Anfrage ohne. Ablehnungen (`refusal`) und Fehler
+  (Schluessel, Limit, Ueberlastung) werden verstaendlich gemeldet, ohne Schluessel oder Eingaben zu nennen.
+- **Was gesendet wird** (Datenschutz-Grundsatz, `src/ai.ts`): Chat nur die eigenen Nachrichten plus Name, Modus und Datum; Tagesplan und Aufgaben aufteilen die
+  offenen Aufgaben (beim Aufteilen nur die eine); Rueckblick erledigte und offene Aufgaben, Fokuszeit, Ausgaben; "Depot erklaeren" die Positionen. Jeweils nur auf Klick.
+  Der Depot-Prompt verlangt ehrliche Grenzen (keine aktuellen Nachrichten) und keine Anlageberatung.
+- **Antworten werden nur als Text angezeigt** oder als Aufgabentext uebernommen (nach Vorschau), nie ausgefuehrt.
+- **Panel:** Reiter "Assistent" mit Chat (Verlauf lokal je Tier und Modus, loeschbar) und Schnellaktionen; "Aufteilen" an offenen Aufgaben. Solange eine Antwort aussteht,
+  schliesst das Wegklicken das Panel nicht.
 
 ## Hauptfenster (Schritt 8)
 Die App hat eine Startseite (Fenster `home`): Karten aller Tiere mit Bild, Name, Rolle und einem Schalter (aktiv/deaktiviert),

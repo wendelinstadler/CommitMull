@@ -9,12 +9,18 @@ export interface GlobalSettings {
   hotkey: string;
   /** Tastenkombination "Alle schlafen schicken / aufwecken". */
   sleepHotkey: string;
+  /** KI-Assistent (Claude) eingeschaltet: nur mit eigenem Schluessel und nach Bestaetigung der Weitergabe. */
+  aiEnabled: boolean;
+  /** Gewaehltes Claude-Modell fuer den Assistenten. */
+  aiModel: string;
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
   hungerHours: 8,
   hotkey: "Ctrl+Shift+P",
   sleepHotkey: "Ctrl+Shift+S",
+  aiEnabled: false,
+  aiModel: "claude-opus-5-5",
 };
 
 export const POLL_OPTIONS = [1, 5, 10, 30, 60];
@@ -30,6 +36,8 @@ export async function loadSettings(): Promise<GlobalSettings> {
     hungerHours: saved?.hungerHours ?? DEFAULT_SETTINGS.hungerHours,
     hotkey: saved?.hotkey ?? DEFAULT_SETTINGS.hotkey,
     sleepHotkey: saved?.sleepHotkey ?? DEFAULT_SETTINGS.sleepHotkey,
+    aiEnabled: saved?.aiEnabled ?? DEFAULT_SETTINGS.aiEnabled,
+    aiModel: saved?.aiModel ?? DEFAULT_SETTINGS.aiModel,
   };
 }
 

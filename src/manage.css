@@ -419,3 +419,38 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* KI-Einstellungen */
+
+.manage-ok {
+  margin-left: 6px;
+  color: #1f7a34;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.manage-inline {
+  padding: 5px 12px;
+  background: #fbe3e6;
+  border: 1px solid #7a3b4a;
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.manage-inline:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.manage .editor-row {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.manage .editor-row input {
+  flex: 1;
+}

@@ -47,7 +47,7 @@
   box-shadow: 0 6px 20px rgba(43, 22, 32, 0.28);
 }
 
-.pw button {
+:where(.pw) button {
   font: inherit;
   color: inherit;
   cursor: pointer;
@@ -59,7 +59,7 @@
   outline-offset: 2px;
 }
 
-.pw input {
+:where(.pw) input {
   font: inherit;
   color: inherit;
   user-select: text;
@@ -195,7 +195,7 @@
 
 .pw-tab {
   position: relative;
-  padding: 8px 12px 9px;
+  padding: 8px 11px 9px;
   background: transparent;
   border: 0;
   border-radius: 8px 8px 0 0;
@@ -715,4 +715,161 @@ button.pw-row:hover {
   .pw-switch::after {
     transition: none;
   }
+}
+
+/* Assistent */
+
+.pw-setup h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.pw-setup p,
+.pw-setup li {
+  color: var(--muted);
+}
+
+.pw-setup ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.pw-setup li {
+  margin-bottom: 6px;
+}
+
+.pw-chat {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% + 28px);
+  margin: -14px;
+  padding: 0;
+}
+
+.pw-chat-log {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 14px 6px;
+  overflow-y: auto;
+  scrollbar-color: #d8b8c0 transparent;
+  scrollbar-width: thin;
+}
+
+.pw-msg {
+  max-width: 88%;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.pw-msg.user {
+  margin-left: auto;
+  background: var(--plum);
+  border-bottom-right-radius: 4px;
+  color: #fff;
+}
+
+.pw-msg.assistant {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;
+}
+
+.pw-msg.pending {
+  color: var(--muted);
+}
+
+.pw-msg.error {
+  max-width: 100%;
+  background: var(--bad-soft);
+  border: 1px solid #efb8b3;
+  color: var(--bad);
+}
+
+.pw-meta {
+  margin: -2px 0 6px 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+}
+
+.pw-chip {
+  padding: 4px 10px;
+  background: var(--plum-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--plum);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pw-chip:hover:not(:disabled) {
+  background: var(--plum-hover);
+}
+
+.pw-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pw-chat .pw-form {
+  margin: 0;
+  padding: 0 14px 14px;
+}
+
+/* Aufgaben teilen */
+
+.pw-todo-item {
+  border-bottom: 1px solid var(--line);
+}
+
+.pw-todo-item > .pw-todo {
+  border-bottom: 0;
+}
+
+.pw-todo .pw-split {
+  opacity: 0;
+  color: var(--plum);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pw-todo:hover .pw-split,
+.pw-todo:focus-within .pw-split {
+  opacity: 1;
+}
+
+.pw-todo .pw-split:hover:not(:disabled) {
+  background: var(--plum-soft);
+  color: var(--plum);
+}
+
+.pw-proposal {
+  margin: 0 0 10px 30px;
+  padding: 10px 12px;
+  background: var(--plum-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.pw-proposal ol {
+  margin: 6px 0 10px;
+  padding-left: 18px;
+  user-select: text;
+}
+
+.pw-proposal-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }

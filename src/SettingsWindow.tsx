@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./manage.css";
 import { ACCESSORIES, Accessory } from "./accessories";
@@ -18,6 +18,7 @@ import {
 } from "./agents";
 import { Pet } from "./Pet";
 import { ROLES, roleInfo } from "./roles";
+import { AI_MODELS, ask } from "./ai";
 import {
   DEFAULT_SETTINGS,
   FOOD_OPTIONS,
@@ -26,6 +27,7 @@ import {
   loadSettings,
   POLL_OPTIONS,
   saveSettings,
+  SETTINGS_CHANGED,
 } from "./settings";
 import { Species, SPECIES_LIST } from "./species";
 import { BlockListEditor, InvestEditor, validateInvest } from "./trackerEditors";
@@ -71,15 +73,26 @@ export function SettingsWindow() {
   const [busy, setBusy] = useState(false);
   /** Vom Hauptfenster gewuenscht: Agent-Id oder "new" (neuen Agenten anlegen), gilt fuer das naechste Laden. */
   const pending = useRef<string | null>(null);
+  /** KI-Assistent: ist ein Schluessel gespeichert (der Schluessel selbst ist nie lesbar), Eingabefeld und Rueckmeldung. */
+  const [hasKey, setHasKey] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+  const [aiNote, setAiNote] = useState<{ text: string; error: boolean } | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
 
   // Beim Oeffnen (Fenster wird nur versteckt) immer den gespeicherten Stand zeigen.
   useEffect(() => {
     const reload = () => {
       loadSettings().then(setGlobals);
+      invoke<boolean>("ai_key_status").then(setHasKey).catch(() => setHasKey(false));
+      setKeyInput("");
+      setAiNote(null);
       readAgents().then((list) => {
         const want = pending.current;
         pending.current = null;
-        if (want === "new") {
+        if (want === "general") {
+          setAgents(list);
+          setSelected(GENERAL);
+        } else if (want === "new") {
           const fresh = createAgent("Neues Tier", "cat", "custom");
           setAgents([...list, fresh]);
           setSelected(fresh.id);
@@ -199,6 +212,52 @@ export function SettingsWindow() {
     setAgents(rest);
     setSelected(rest[0]?.id ?? GENERAL);
     setConfirmDelete(false);
+  };
+
+  /** Schluessel sofort im Windows-Anmeldeinformationsspeicher ablegen (nicht erst mit "Speichern"). */
+  const saveKey = async () => {
+    setAiBusy(true);
+    setAiNote(null);
+    try {
+      await invoke("ai_set_key", { key: keyInput });
+      setKeyInput("");
+      setHasKey(true);
+      setAiNote({ text: "Schluessel sicher gespeichert. Mit 'Verbindung testen' pruefst du ihn.", error: false });
+      await emit(SETTINGS_CHANGED);
+    } catch (e) {
+      setAiNote({ text: String(e), error: true });
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const removeKey = async () => {
+    setAiBusy(true);
+    try {
+      await invoke("ai_delete_key");
+      setHasKey(false);
+      updateGlobal("aiEnabled", false);
+      setAiNote({ text: "Schluessel entfernt.", error: false });
+      await emit(SETTINGS_CHANGED);
+    } catch (e) {
+      setAiNote({ text: String(e), error: true });
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  /** Schickt eine winzige Anfrage (ein paar Tokens), um Schluessel und Modell zu pruefen. */
+  const testConnection = async () => {
+    setAiBusy(true);
+    setAiNote(null);
+    try {
+      const reply = await ask(globals.aiModel, "Antworte mit einem sehr kurzen deutschen Satz.", [{ role: "user", content: "Sag kurz Hallo." }], 100);
+      setAiNote({ text: `Es klappt. Claude antwortet: "${reply.text}"`, error: false });
+    } catch (e) {
+      setAiNote({ text: e instanceof Error ? e.message : String(e), error: true });
+    } finally {
+      setAiBusy(false);
+    }
   };
 
   const onHotkeyKey = (field: "hotkey" | "sleepHotkey") => (e: React.KeyboardEvent) => {
@@ -614,6 +673,68 @@ export function SettingsWindow() {
                   placeholder="Hier klicken, dann Tasten druecken"
                 />
               </label>
+
+              <h2>KI-Assistent (Claude)</h2>
+              <p className="manage-hint">
+                Chat im Panel, Aufgaben aufteilen, Tagesplan, Rueckblick und Depot-Erklaerung. Du brauchst einen eigenen API-Schluessel von
+                console.anthropic.com (eine Anmeldung mit dem Claude-Abo geht in fremden Apps nicht). Abgerechnet wird nach Verbrauch.
+              </p>
+
+              <label>
+                <span>API-Schluessel {hasKey && <em className="manage-ok">gespeichert</em>}</span>
+                <div className="editor-row">
+                  <input
+                    type="password"
+                    value={keyInput}
+                    placeholder={hasKey ? "Neuen Schluessel eintragen, um ihn zu ersetzen" : "sk-ant-..."}
+                    onChange={(e) => setKeyInput(e.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <button type="button" className="manage-inline" onClick={saveKey} disabled={aiBusy || !keyInput.trim()}>
+                    Speichern
+                  </button>
+                </div>
+                <small>Der Schluessel liegt im Windows-Anmeldeinformationsspeicher, nicht in state.json, und wird nur an api.anthropic.com gesendet.</small>
+              </label>
+
+              <label>
+                <span>Modell</span>
+                <select value={globals.aiModel} onChange={(e) => updateGlobal("aiModel", e.target.value)}>
+                  {AI_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label} - {m.hint}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="manage-check">
+                <input
+                  type="checkbox"
+                  checked={globals.aiEnabled && hasKey}
+                  disabled={!hasKey}
+                  onChange={(e) => updateGlobal("aiEnabled", e.target.checked)}
+                />
+                <span>KI-Assistent einschalten</span>
+              </label>
+              <p className="manage-hint">
+                Wenn eingeschaltet, sendet die App deine Chat-Nachrichten an Anthropic. Tagesplan und Aufgaben aufteilen senden dazu deine offenen
+                Aufgaben, der Rueckblick Aufgaben und Tageszahlen, "Depot erklaeren" die Positionen deines Depots, jeweils nur auf deinen Klick.
+                Antworten werden nur angezeigt, nie ausgefuehrt.
+              </p>
+
+              <div className="editor-row">
+                <button type="button" className="manage-inline" onClick={testConnection} disabled={aiBusy || !hasKey}>
+                  Verbindung testen
+                </button>
+                {hasKey && (
+                  <button type="button" className="manage-inline" onClick={removeKey} disabled={aiBusy}>
+                    Schluessel entfernen
+                  </button>
+                )}
+              </div>
+              {aiNote && <p className={aiNote.error ? "settings-message error" : "settings-message"}>{aiNote.text}</p>}
             </>
           )}
         </div>

@@ -1,3 +1,4 @@
+mod ai;
 mod apps;
 mod quotes;
 
@@ -305,6 +306,29 @@ async fn close_app_windows(exe: String) -> Result<usize, String> {
     Ok(apps::close_windows_of(&exe))
 }
 
+/// Ist ein Anthropic-Schluessel im Windows-Anmeldeinformationsspeicher? (Der Schluessel selbst ist nie lesbar.)
+#[tauri::command]
+fn ai_key_status() -> bool {
+    ai::has_key()
+}
+
+/// Speichert den Schluessel im Windows-Anmeldeinformationsspeicher.
+#[tauri::command]
+fn ai_set_key(key: String) -> Result<(), String> {
+    ai::set_key(&key)
+}
+
+#[tauri::command]
+fn ai_delete_key() -> Result<(), String> {
+    ai::delete_key()
+}
+
+/// Eine Anfrage an Claude. Nur erlaubte Modelle, geprueft nach Rollen und Groessen; der Schluessel bleibt in Rust.
+#[tauri::command]
+async fn ai_complete(request: ai::AiRequest) -> Result<ai::AiReply, String> {
+    ai::complete(&request).await
+}
+
 /// Kurs eines Wertpapiers, einer Waehrung oder einer Kryptowaehrung (Yahoo Finance).
 #[tauri::command]
 async fn fetch_quote(symbol: String) -> Result<quotes::Quote, String> {
@@ -496,6 +520,10 @@ pub fn run() {
             close_app_windows,
             check_app_name,
             fetch_quote,
+            ai_key_status,
+            ai_set_key,
+            ai_delete_key,
+            ai_complete,
             get_paused
         ])
         // Hauptfenster und Einstellungsfenster werden nur versteckt: die App lebt im Tray weiter.
