@@ -17,7 +17,7 @@ eigenem Aussehen und eigener Futterquelle (GitHub-Commits, manuelle Eintraege, F
 - **Ein Fenster pro Agent** (`agent-<id>`, 170x190, transparent, immer oben). Das jetzige Fenster ist schon so gebaut,
   Ziehen, Laufen, Panel und Vorschau-Geist funktionieren pro Fenster unveraendert. Eine grosse Vollbild-Ueberlagerung
   waere dagegen auf Windows nur mit aufwendigem Hit-Testing klickdurchlaessig zu bekommen.
-- **Hub-Fenster** (unsichtbar, laeuft immer, dient zugleich als Verwaltungsfenster): hier liegt die ganze Logik.
+- **Hub-Fenster** (unsichtbar, laeuft immer): hier liegt die ganze Logik. Das Verwaltungsfenster bleibt ein eigenes Fenster (`settings`).
   Die Agent-Fenster zeigen nur an und melden Eingaben (Klick, Ziehen, Panel-Aktionen).
   - Hunger-Takt, Stimmung, Schlafzustand: ein einziger Schreiber, keine Konflikte zwischen Fenstern.
   - Tracker laufen hier: ein GitHub-Abruf pro Benutzer statt einer pro Fenster (Rate-Limit 60/h ohne Token).
@@ -79,8 +79,8 @@ Hunger und GitHub-Zustand wandern in die neuen Schluessel. Die alten Schluessel 
 1. Fenster + Sprite + Tray-Menue + Hotkey + Autostart  (fertig)
 2. Zustand + Verhalten: Hunger, Stimmung, Panel, Laufen per Ziehen  (fertig)
 3. GitHub: Commits als Futter  (fertig)
-4. Einstellungsfenster (global: Hotkey, Token, Intervall, Hunger, Futter)  (in Arbeit; wird zur Basis der Verwaltung)
-5. Umbau: Hub und Agent-Fenster, Datenmodell, Migration. Aussehen unveraendert, ein Agent.
+4. Einstellungsfenster (global: Hotkey, Token, Intervall, Hunger, Futter)  (fertig; wird zur Basis der Verwaltung)
+5. Umbau: Hub und Agent-Fenster, Datenmodell, Migration. Aussehen unveraendert, ein Agent.  (im Test)
 6. Agenten-Verwaltung: anlegen, bearbeiten, ausblenden, loeschen, Name und Art waehlen (zunaechst nur Nacktmull)
 7. Sprite-System: Arten (in Gruppen) und Rollen mit Accessoires
 8. Tracker-System: GitHub portiert, manuelles Eintragen, Fokus-Timer; Finanz-Whiteboard und Budget

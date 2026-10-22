@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, PhysicalPosition, PhysicalSize, Window } from "@tauri-apps/api/window";
 import { Pet } from "./Pet";
 import { Panel } from "./Panel";
-import { aimTarget, measureWindow, moodOf, useHunger, useWalker, WindowMeasure } from "./behavior";
-import { useCommits } from "./commits";
-import { DEFAULT_SETTINGS, useSettings } from "./settings";
+import { aimTarget, measureWindow, moodOf, useWalker, WindowMeasure } from "./behavior";
+import {
+  AgentCommand,
+  AgentFedPayload,
+  AgentStatePayload,
+  EVENT_AGENT_CMD,
+  EVENT_AGENT_FED,
+  EVENT_AGENT_STATE,
+  HUB_LABEL,
+} from "./protocol";
 import { PetState } from "./sprites";
 
 const DRAG_THRESHOLD = 4;
@@ -16,13 +23,21 @@ const EAT_MS = 1000;
 const CLOSED_H = 190;
 const OPEN_H = 460;
 
-export default function App() {
+interface Props {
+  id: string;
+}
+
+/** Fenster eines Agenten: zeigt das Tier an und meldet Eingaben; die Logik liegt im Hub. */
+export function AgentWindow({ id }: Props) {
+  const [info, setInfo] = useState<{ name: string; hunger: number } | null>(null);
   const [paused, setPaused] = useState(false);
   const [override, setOverride] = useState<PetState | null>(null);
   const [bubble, setBubble] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [autostart, setAutostart] = useState(false);
+  const [eating, setEating] = useState(false);
   const bubbleTimer = useRef<number | undefined>(undefined);
+  const eatTimer = useRef<number | undefined>(undefined);
   /** Geisterfenster: halbtransparente Vorschau, wo das Tier landet, waehrend man zieht. */
   const ghost = useRef<{ win: Window | null; measure: WindowMeasure | null; active: boolean }>({
     win: null,
@@ -31,14 +46,8 @@ export default function App() {
   });
   const press = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
 
-  const settings = useSettings();
-  /** Futter pro Commit in Hunger-Anteilen (1 = komplett satt). */
-  const foodPerCommit = (settings ?? DEFAULT_SETTINGS).foodPercent / 100;
-
-  const { hunger, feed } = useHunger(paused, (settings ?? DEFAULT_SETTINGS).hungerHours);
+  const hunger = info?.hunger ?? 1;
   const mood = moodOf(hunger);
-  const [eating, setEating] = useState(false);
-  const eatTimer = useRef<number | undefined>(undefined);
 
   const canWalk = !paused && !override && !eating && !panelOpen;
   const { walking, facing, walkTo, stop } = useWalker(canWalk);
@@ -47,13 +56,7 @@ export default function App() {
     ? "sleep"
     : override ?? (eating ? "eat" : walking ? "walk" : mood === "sad" ? "sad" : "idle");
 
-  /** Futter geben (spaeter: neue GitHub-Commits) und kurz fressen lassen. */
-  const eat = (amount: number) => {
-    feed(amount);
-    setEating(true);
-    window.clearTimeout(eatTimer.current);
-    eatTimer.current = window.setTimeout(() => setEating(false), EAT_MS);
-  };
+  const command = (cmd: AgentCommand) => emitTo(HUB_LABEL, EVENT_AGENT_CMD, cmd).catch(() => {});
 
   const say = (text: string) => {
     setBubble(text);
@@ -61,19 +64,39 @@ export default function App() {
     bubbleTimer.current = window.setTimeout(() => setBubble(null), BUBBLE_MS);
   };
 
-  // Neue GitHub-Commits sind Futter
-  const { pollNow } = useCommits((fresh, today) => {
-    eat(fresh * foodPerCommit);
-    say(`${today} ${today === 1 ? "Commit" : "Commits"} heute!`);
-  }, settings);
+  const eat = () => {
+    setEating(true);
+    window.clearTimeout(eatTimer.current);
+    eatTimer.current = window.setTimeout(() => setEating(false), EAT_MS);
+  };
 
+  // Zustand und Futter kommen vom Hub; danach melden wir uns beim Hub, damit er den Zustand schickt.
+  const eatRef = useRef(eat);
+  eatRef.current = eat;
+  const sayRef = useRef(say);
+  sayRef.current = say;
   useEffect(() => {
-    const unlisten = listen<boolean>("pause-changed", (e) => setPaused(e.payload));
+    let alive = true;
+    const unlisteners = Promise.all([
+      listen<AgentStatePayload>(EVENT_AGENT_STATE, (e) => {
+        if (e.payload.id === id) setInfo({ name: e.payload.name, hunger: e.payload.hunger });
+      }),
+      listen<AgentFedPayload>(EVENT_AGENT_FED, (e) => {
+        eatRef.current();
+        if (e.payload.text) sayRef.current(e.payload.text);
+      }),
+      listen<boolean>("pause-changed", (e) => setPaused(e.payload)),
+    ]);
+    unlisteners.then(() => {
+      if (alive) command({ id, type: "ready" });
+    });
+    invoke<boolean>("get_paused").then(setPaused);
     invoke<boolean>("get_autostart").then(setAutostart);
     return () => {
-      unlisten.then((f) => f());
+      alive = false;
+      unlisteners.then((list) => list.forEach((f) => f()));
     };
-  }, []);
+  }, [id]);
 
   // Fenster nach oben aufziehen, wenn das Panel offen ist; die Unterkante (das Tier) bleibt stehen.
   useEffect(() => {
@@ -91,15 +114,7 @@ export default function App() {
   }, [panelOpen]);
 
   // Nur im Dev-Modus: Tasten 1-5 schalten Animationen durch, 0 = Automatik,
-  // F = Futter geben, H = Hunger um 20 % senken, G = GitHub jetzt abfragen
-  const eatRef = useRef(eat);
-  eatRef.current = eat;
-  const feedRef = useRef(feed);
-  feedRef.current = feed;
-  const foodRef = useRef(foodPerCommit);
-  foodRef.current = foodPerCommit;
-  const pollRef = useRef(pollNow);
-  pollRef.current = pollNow;
+  // F = Futter geben, H = Hunger um 20 % senken, G = Tracker jetzt abfragen
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const order: PetState[] = ["idle", "walk", "sleep", "eat", "sad"];
@@ -107,13 +122,13 @@ export default function App() {
       const i = Number(e.key) - 1;
       if (i >= 0 && i < order.length) setOverride(order[i]);
       else if (e.key === "0") setOverride(null);
-      else if (e.key === "f") eatRef.current(foodRef.current);
-      else if (e.key === "h") feedRef.current(-0.2);
-      else if (e.key === "g") pollRef.current();
+      else if (e.key === "f") command({ id, type: "dev-feed" });
+      else if (e.key === "h") command({ id, type: "dev-hunger", delta: -0.2 });
+      else if (e.key === "g") command({ id, type: "poll-now" });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [id]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -175,6 +190,9 @@ export default function App() {
     invoke("open_settings");
   };
 
+  // Bis der Hub den ersten Zustand geschickt hat, nichts zeigen (sonst blitzt kurz der falsche Hunger auf).
+  if (!info) return null;
+
   return (
     <div
       className="stage"
@@ -187,6 +205,7 @@ export default function App() {
       {bubble && <div className="bubble">{bubble}</div>}
       {panelOpen && (
         <Panel
+          name={info.name}
           hunger={hunger}
           mood={mood}
           paused={paused}
@@ -195,7 +214,7 @@ export default function App() {
           onToggleAutostart={toggleAutostart}
           onSettings={openSettings}
           onQuit={() => invoke("quit_app")}
-          onFeed={import.meta.env.DEV ? () => eat(foodPerCommit) : undefined}
+          onFeed={import.meta.env.DEV ? () => command({ id, type: "dev-feed" }) : undefined}
         />
       )}
       <Pet state={state} facing={facing} />

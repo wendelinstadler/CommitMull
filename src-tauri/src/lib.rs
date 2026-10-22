@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, WindowEvent, Wry,
+    AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -21,25 +21,83 @@ struct PetMenu {
     autostart: CheckMenuItem<Wry>,
 }
 
+const AGENT_PREFIX: &str = "agent-";
+
+fn agent_windows(app: &AppHandle) -> Vec<WebviewWindow> {
+    app.webview_windows()
+        .into_iter()
+        .filter(|(label, _)| label.starts_with(AGENT_PREFIX))
+        .map(|(_, window)| window)
+        .collect()
+}
+
+/// Blendet alle Agenten ein oder aus: Ist mindestens einer sichtbar, werden alle versteckt.
 fn toggle_visible(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        if window.is_visible().unwrap_or(false) {
-            let _ = window.hide();
-        } else {
-            let _ = window.show();
-        }
+    let windows = agent_windows(app);
+    let any_visible = windows.iter().any(|w| w.is_visible().unwrap_or(false));
+    for window in windows {
+        let _ = if any_visible { window.hide() } else { window.show() };
     }
 }
 
-/// Setzt das Fenster in die untere rechte Ecke des Arbeitsbereichs (ueber der Taskleiste).
-fn place_bottom_right(app: &AppHandle) {
-    let Some(window) = app.get_webview_window("main") else { return };
+/// Setzt das Fenster in die untere rechte Ecke des Arbeitsbereichs (ueber der Taskleiste);
+/// jeder weitere Agent steht eine Fensterbreite weiter links.
+fn place_bottom_right(window: &WebviewWindow, slot: i32) {
     let Ok(Some(monitor)) = window.primary_monitor() else { return };
     let Ok(size) = window.outer_size() else { return };
     let area = monitor.work_area();
-    let x = area.position.x + area.size.width as i32 - size.width as i32;
+    let x = (area.position.x + area.size.width as i32 - size.width as i32 * (slot + 1)).max(area.position.x);
     let y = area.position.y + area.size.height as i32 - size.height as i32;
     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+/// Agent-Ids werden Teil des Fensternamens und der URL: nur Buchstaben, Ziffern, - und _.
+fn valid_agent_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Oeffnet das Fenster eines Agenten (tut nichts, wenn es schon offen ist).
+#[tauri::command]
+async fn open_agent_window(app: AppHandle, id: String) -> Result<(), String> {
+    if !valid_agent_id(&id) {
+        return Err(format!("Ungueltige Agent-Id: {id}"));
+    }
+    let label = format!("{AGENT_PREFIX}{id}");
+    if app.get_webview_window(&label).is_some() {
+        return Ok(());
+    }
+    let slot = agent_windows(&app).len() as i32;
+    let window = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(format!("index.html?agent={id}").into()))
+        .title("CommitMull")
+        .inner_size(170.0, 190.0)
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .shadow(false)
+        .maximizable(false)
+        .minimizable(false)
+        .visible(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+    place_bottom_right(&window, slot);
+    window.show().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn close_agent_window(app: AppHandle, id: String) {
+    if let Some(window) = app.get_webview_window(&format!("{AGENT_PREFIX}{id}")) {
+        let _ = window.destroy();
+    }
+}
+
+/// Pause-Zustand. Die Fenster laden teils vor `setup`; dann ist noch nicht pausiert.
+#[tauri::command]
+fn get_paused(app: AppHandle) -> bool {
+    app.try_state::<PetMenu>()
+        .map(|menu| menu.pause.is_checked().unwrap_or(false))
+        .unwrap_or(false)
 }
 
 /// Registriert den Hotkey neu. Der alte bleibt aktiv, wenn der neue ungueltig oder belegt ist.
@@ -168,7 +226,10 @@ pub fn run() {
             set_autostart,
             quit_app,
             set_hotkey,
-            open_settings
+            open_settings,
+            open_agent_window,
+            close_agent_window,
+            get_paused
         ])
         // Das Einstellungsfenster wird nur versteckt, damit es sich wieder oeffnen laesst.
         .on_window_event(|window, event| {
@@ -215,8 +276,6 @@ pub fn run() {
                 .build(app)?;
 
             app.manage(PetMenu { menu, pause, autostart });
-
-            place_bottom_right(app.handle());
 
             // Das Geisterfenster (Zielvorschau beim Ziehen) soll Mausklicks durchlassen.
             if let Some(ghost) = app.get_webview_window("ghost") {

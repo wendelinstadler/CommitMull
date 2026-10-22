@@ -6,7 +6,7 @@ Das Tier stirbt nie. Wenn es lange nichts zu fressen gibt, wird es nur traurig.
 
 ## Stand
 
-Schritt 4 ist im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
+Schritt 5 (Umbau auf Agent-Fenster und Hub) ist im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
 
 Funktioniert:
 - Transparentes, rahmenloses Fenster, immer im Vordergrund, nicht in der Taskleiste
@@ -23,8 +23,8 @@ Funktioniert:
 - GitHub-Anbindung: alle 10 Minuten werden neue Pushes von `wendelinstadler` abgefragt; jeder neue Commit bringt 25 % Futter, dazu eine Sprechblase "N Commits heute!"
 
 Noch nicht gebaut:
-- Laufen auf Fensterkanten (Schritt 5)
-- Installer und Release (Schritt 6)
+- Laufen auf Fensterkanten (Schritt 11)
+- Installer und Release (Schritt 12)
 
 ## Voraussetzungen (Windows)
 
@@ -72,20 +72,29 @@ Nur im Dev-Modus, das Fenster braucht dafuer den Fokus (einmal anklicken):
 
 ## Aufbau
 
+Jedes Tier ("Agent") hat ein eigenes kleines Fenster. Die ganze Logik laeuft in einem unsichtbaren Hub-Fenster;
+die Agent-Fenster zeigen nur an und melden Eingaben (Details in [PLAN.md](PLAN.md)).
+
 ```
 src/
-  App.tsx        Fenster-Logik: Klick, Ziehen, Zustand, Panel
-  Pet.tsx        Canvas, spielt die Animationen ab
-  Panel.tsx      Status-Panel
+  main.tsx          waehlt anhand der URL (?hub, ?agent=<id>, ?settings, ?ghost) die Ansicht
+  Hub.tsx           unsichtbares Fenster, startet hubLogic.ts
+  hubLogic.ts       Hunger-Takt, Tracker-Abfragen, Agent-Fenster oeffnen und schliessen
+  AgentWindow.tsx   Fenster eines Tiers: Klick, Ziehen, Laufen, Panel, Vorschau
+  Pet.tsx           Canvas, spielt die Animationen ab
+  Panel.tsx         Status-Panel
   SettingsWindow.tsx  Einstellungsfenster
-  settings.ts    Einstellungen laden, speichern, Standardwerte
-  behavior.ts    Hunger, Stimmung, Laufen
-  commits.ts     GitHub abfragen, neue Commits erkennen
-  github.ts      GitHub-API (Events, Vergleich)
-  store.ts       Gespeicherter Zustand
-  sprites.ts     Nacktmull als 64x64-Pixelzeichnung samt Frames
+  Ghost.tsx         halbtransparente Zielvorschau beim Ziehen
+  agents.ts         Agentenmodell, Speicher, Migration vom alten Einzel-Mull
+  settings.ts       globale Einstellungen (Hotkey, Hunger-Dauer)
+  protocol.ts       Nachrichten zwischen Hub und Agent-Fenstern
+  behavior.ts       Stimmung, Laufen
+  githubTracker.ts  GitHub abfragen, neue Commits erkennen
+  github.ts         GitHub-API (Events, Vergleich)
+  store.ts          gespeicherter Zustand
+  sprites.ts        Nacktmull als 64x64-Pixelzeichnung samt Frames
 src-tauri/
-  src/lib.rs     Tray, Menue, Hotkey, Autostart, Befehle
+  src/lib.rs        Tray, Menue, Hotkey, Autostart, Agent-Fenster, Befehle
 ```
 
-Der gespeicherte Zustand liegt in `%APPDATA%\de.wendelinstadler.commitmull\state.json`.
+Der gespeicherte Zustand liegt in `%APPDATA%\de.wendelinstadler.commitmull\state.json`. Beim ersten Start der Agenten-Version wird der bisherige Mull dort als Agent "Informatiker" uebernommen (Hunger und GitHub-Zustand bleiben erhalten, die alten Schluessel werden nicht geloescht).

@@ -13,18 +13,16 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "label": "main",
-        "title": "CommitMull",
-        "width": 170,
-        "height": 190,
-        "transparent": true,
+        "label": "hub",
+        "title": "CommitMull Hub",
+        "url": "index.html?hub",
+        "width": 100,
+        "height": 100,
+        "visible": false,
+        "focus": false,
         "decorations": false,
-        "alwaysOnTop": true,
         "skipTaskbar": true,
-        "resizable": false,
-        "shadow": false,
-        "maximizable": false,
-        "minimizable": false
+        "resizable": false
       },
       {
         "label": "settings",
@@ -63,6 +61,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ]
   }
 }

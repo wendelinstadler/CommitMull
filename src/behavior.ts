@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getStore, saveValue } from "./store";
 import { currentMonitor, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
-
-const TICK_MS = 30_000;
 
 export type Mood = "happy" | "ok" | "sad";
 
@@ -11,65 +8,6 @@ export function moodOf(hunger: number): Mood {
   if (hunger > 0.6) return "happy";
   if (hunger >= 0.2) return "ok";
   return "sad";
-}
-
-const clamp = (v: number) => Math.min(1, Math.max(0, v));
-
-/** emptyHours: Dauer in aktiver (nicht pausierter) Zeit, in der der Hunger von voll auf leer faellt. */
-export function useHunger(paused: boolean, emptyHours: number) {
-  const [hunger, setHunger] = useState(1);
-  const hungerRef = useRef(1);
-  const pausedRef = useRef(paused);
-  const loaded = useRef(false);
-  pausedRef.current = paused;
-  const emptyMsRef = useRef(emptyHours * 60 * 60 * 1000);
-  emptyMsRef.current = emptyHours * 60 * 60 * 1000;
-
-  const apply = useCallback((next: number) => {
-    hungerRef.current = clamp(next);
-    setHunger(hungerRef.current);
-  }, []);
-
-  const save = useCallback(() => {
-    // Vor dem Laden nichts schreiben, sonst ueberschreibt der Startwert den gespeicherten Hunger.
-    if (loaded.current) saveValue("hunger", hungerRef.current);
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    getStore().then(async (s) => {
-      const saved = await s.get<number>("hunger");
-      if (!alive) return;
-      loaded.current = true;
-      if (typeof saved === "number") apply(saved);
-    });
-
-    // Die Zeit zaehlt nur, solange das Tier laeuft und nicht pausiert ist.
-    let last = Date.now();
-    const id = window.setInterval(() => {
-      const now = Date.now();
-      const elapsed = now - last;
-      last = now;
-      if (pausedRef.current) return;
-      apply(hungerRef.current - elapsed / emptyMsRef.current);
-      save();
-    }, TICK_MS);
-
-    return () => {
-      alive = false;
-      window.clearInterval(id);
-    };
-  }, [apply, save]);
-
-  const feed = useCallback(
-    (amount: number) => {
-      apply(hungerRef.current + amount);
-      save();
-    },
-    [apply, save],
-  );
-
-  return { hunger, feed };
 }
 
 const STEP_MS = 50;

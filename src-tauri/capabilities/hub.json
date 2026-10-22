@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "hub",
+  "description": "Rechte fuer das unsichtbare Hub-Fenster (Logik, Tracker, Speicher)",
+  "windows": [
+    "hub"
+  ],
+  "permissions": [
+    "core:default",
+    "store:default"
+  ]
+}

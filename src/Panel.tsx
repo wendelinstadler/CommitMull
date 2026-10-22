@@ -1,6 +1,7 @@
 import { Mood } from "./behavior";
 
 interface Props {
+  name: string;
   hunger: number;
   mood: Mood;
   paused: boolean;
@@ -20,6 +21,7 @@ const MOOD_LABEL: Record<Mood, string> = {
 };
 
 export function Panel({
+  name,
   hunger,
   mood,
   paused,
@@ -34,7 +36,7 @@ export function Panel({
 
   return (
     <div className="panel" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
-      <div className="panel-title">CommitMull</div>
+      <div className="panel-title">{name}</div>
 
       <div className="panel-row">
         <span>Stimmung</span>
