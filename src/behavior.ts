@@ -78,7 +78,7 @@ const STEP_MS = 50;
 const WALK_SPEED = 45;
 
 /**
- * Laesst das Fenster am unteren Rand des Arbeitsbereichs zu einem Ziel laufen (walkTo).
+ * Laesst das Fenster ueber den Bildschirm zu einem Ziel laufen (walkTo).
  * Mit enabled = false bricht ein laufender Gang ab (Pause, Panel offen, Fressen ...).
  */
 export function useWalker(enabled: boolean) {
@@ -100,9 +100,9 @@ export function useWalker(enabled: boolean) {
 
   useEffect(() => stop, [stop]);
 
-  /** screenX: Zielpunkt in CSS-Pixeln auf dem Bildschirm; das Tier laeuft mit seiner Mitte dorthin. */
+  /** screenX/screenY: Zielpunkt in CSS-Pixeln auf dem Bildschirm; die Fuesse des Tiers laufen dorthin. */
   const walkTo = useCallback(
-    async (screenX: number) => {
+    async (screenX: number, screenY: number) => {
       stop();
       const token = run.current;
       const win = getCurrentWindow();
@@ -115,26 +115,40 @@ export function useWalker(enabled: boolean) {
       if (token !== run.current || !monitor) return;
 
       const area = monitor.workArea;
-      const minX = area.position.x;
-      const maxX = area.position.x + area.size.width - size.width;
-      const floorY = area.position.y + area.size.height - size.height;
-      const step = Math.max(1, Math.round((WALK_SPEED * scale * STEP_MS) / 1000));
-      const target = Math.min(maxX, Math.max(minX, Math.round(screenX * scale - size.width / 2)));
+      const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+      const targetX = clamp(
+        Math.round(screenX * scale - size.width / 2),
+        area.position.x,
+        area.position.x + area.size.width - size.width,
+      );
+      // Das Tier steht unten im Fenster, die Fenster-Unterkante liegt also bei den Fuessen.
+      const targetY = clamp(
+        Math.round(screenY * scale - size.height),
+        area.position.y,
+        area.position.y + area.size.height - size.height,
+      );
 
       let x = pos.x;
-      if (Math.abs(target - x) <= step) return;
-      const dir = target > x ? 1 : -1;
-      setFacing(dir < 0 ? "left" : "right");
+      let y = pos.y;
+      const step = Math.max(1, (WALK_SPEED * scale * STEP_MS) / 1000);
+      if (Math.hypot(targetX - x, targetY - y) <= step) return;
+      if (targetX !== x) setFacing(targetX < x ? "left" : "right");
       setWalking(true);
 
       stepTimer.current = window.setInterval(() => {
-        x += dir * step;
-        if ((dir > 0 && x >= target) || (dir < 0 && x <= target)) {
-          x = target;
+        const dx = targetX - x;
+        const dy = targetY - y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= step) {
+          x = targetX;
+          y = targetY;
           window.clearInterval(stepTimer.current);
           setWalking(false);
+        } else {
+          x += (dx / dist) * step;
+          y += (dy / dist) * step;
         }
-        win.setPosition(new PhysicalPosition(x, floorY)).catch(() => {});
+        win.setPosition(new PhysicalPosition(Math.round(x), Math.round(y))).catch(() => {});
       }, STEP_MS);
     },
     [stop],

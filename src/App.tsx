@@ -69,7 +69,7 @@ export default function App() {
       const bottom = pos.y + size.height;
       await Promise.all([
         win.setSize(new PhysicalSize(size.width, height)),
-        win.setPosition(new PhysicalPosition(pos.x, bottom - height)),
+        win.setPosition(new PhysicalPosition(pos.x, Math.max(0, bottom - height))),
       ]);
     })().catch(() => {});
   }, [panelOpen]);
@@ -117,7 +117,7 @@ export default function App() {
       press.current = null;
       if (!p || e.button !== 0) return;
       if (!p.dragging) setPanelOpen((open) => !open);
-      else if (canWalkRef.current) walkToRef.current(e.screenX);
+      else if (canWalkRef.current) walkToRef.current(e.screenX, e.screenY);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
