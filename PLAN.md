@@ -109,13 +109,32 @@ Hunger und GitHub-Zustand wandern in die neuen Schluessel. Die alten Schluessel 
 8. Hauptfenster als Startseite der App: alle Tiere als Karten mit Schalter, "Neues Tier", "Bearbeiten"  (im Test)
 9. Tracker-System: GitHub portiert, manuelles Eintragen (Ausgaben mit Wochenbudget, Haken), Fokus-Timer; Whiteboard zeigt den Budgetstand  (im Test)
 10. Schlafmodus + Nest, "Alle schlafen" per Tray und Hotkey  (im Test)
-11. Aktionen: gespeicherte Seiten, Terminal-Befehle mit Bestaetigung
-12. Pakete: Tiere und Agenten als Datei exportieren und importieren, mit strenger Pruefung (siehe unten)
-13. Fensterkanten (WinAPI EnumWindows), faellt runter, wenn das Fenster verschwindet
-14. Release: Installer bauen, GitHub-Release
-15. Spaeter, eigenes Projekt: Online-Marktplatz auf Basis der Pakete (Konten, Hochladen, Pruefung, Meldefunktion)
+    dazu: Programm-Sperre im Fokus (sanftes Schliessen) und Investments (Depot, Kurse von Yahoo Finance)  (im Test)
+11. Begleiter im Arbeitsalltag, Teil 1: Tier mit mehreren Modi, neues Panel-Fenster mit Reitern (Heute, Aufgaben, Mehr), Aufgabenliste,
+    Hinweise bei grossen Kursbewegungen  (im Test)
+12. Begleiter, Teil 2: KI-Assistent mit eigenem Anthropic-Schluessel (Chat im Modus, Aufgaben aufteilen, Tagesplan, Depot erklaeren, Tagesrueckblick)
+13. Aktionen: gespeicherte Seiten, Terminal-Befehle mit Bestaetigung
+14. Pakete: Tiere und Agenten als Datei exportieren und importieren, mit strenger Pruefung (siehe unten)
+15. Fensterkanten (WinAPI EnumWindows), faellt runter, wenn das Fenster verschwindet
+16. Release: Installer bauen, GitHub-Release
+17. Spaeter, eigenes Projekt: Online-Marktplatz auf Basis der Pakete (Konten, Hochladen, Pruefung, Meldefunktion)
 
 Nach jedem Schritt laeuft `npm run tauri dev`, README.md wird nachgezogen, dann Pause zum Testen.
+
+## Begleiter im Arbeitsalltag (Schritt 11 und 12)
+Ziel: Das Tier begleitet durch den Arbeitstag, nicht nur ein Zaehler. Entscheidungen:
+- **Ein Tier, mehrere Modi.** Ein Tier (`Agent`) hat Modi (`Mode`: Rolle, Accessoire, Futterquellen). Im Panel wechselt man mit einem Klick, der aktive Modus
+  steht im Tierzustand (`agentState:<id>.mode`). Hunger, Schlaf, Nest, Aufgaben und Hinweise haengen am Tier; Eintraege, Kurse, Fokus und GitHub-Zustand am Modus
+  (Schluessel mit der Modus-Id; der erste Modus traegt die Id des Tiers, so bleiben alle bisherigen Daten gueltig). Aeltere Speicherstaende (Rolle und Tracker direkt am Tier)
+  werden beim Lesen umgewandelt. GitHub- und Kursabfragen laufen fuer alle Modi weiter, auch wenn gerade ein anderer aktiv ist.
+- **Panel als eigenes Fenster** (`panel-<id>`, 392x600, neben dem Tier): Kopf mit Tier, Sattheit und Modus-Schalter; Reiter *Heute* (Hinweise und die Ansicht des aktiven Modus),
+  *Aufgaben*, *Mehr* (Schlafen, Nest, Pausieren, Verwalten, Autostart, Beenden). Schliesst sich mit Esc oder beim Wegklicken. Das Tierfenster bleibt 170x190.
+- **Aufgaben** gehoeren zum Tier (`todos:<id>`): hinzufuegen, abhaken, loeschen. Jede Aufgabe fuettert beim ersten Erledigen mit 10 %.
+- **Hinweise** (`alerts:<id>`): Nach jeder Kursabfrage prueft der Hub das Depot: Tagesbewegung des Depots ab 3 % oder einer Position ab 5 % (einstellbar, 0 = aus)
+  ergibt einen Hinweis in der Liste und eine Sprechblase am Tier, zum selben Ausloeser hoechstens alle 3 Stunden. Auch im anderen Modus.
+- **KI (Schritt 12):** eigener API-Schluessel von console.anthropic.com (eine Anmeldung mit dem Claude-Abo ist in fremden Apps nicht moeglich), sicher im
+  Windows-Anmeldeinformationsspeicher, Abfragen nur aus Rust. Funktionen: Chat im aktuellen Modus, Aufgaben aufteilen und Tagesplan, Depot-Bewegung erklaeren
+  (sendet die Positionen, nur auf Klick), Tagesrueckblick. Alle KI-Funktionen sind aus, bis ein Schluessel eingetragen und die Weitergabe bestaetigt ist.
 
 ## Hauptfenster (Schritt 8)
 Die App hat eine Startseite (Fenster `home`): Karten aller Tiere mit Bild, Name, Rolle und einem Schalter (aktiv/deaktiviert),

@@ -1,7 +1,9 @@
 mod apps;
 mod quotes;
 
+use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
@@ -37,6 +39,17 @@ struct PetMenu {
 }
 
 const AGENT_PREFIX: &str = "agent-";
+const PANEL_PREFIX: &str = "panel-";
+
+/// Groesse des Panel-Fensters in logischen Pixeln (muss zu panel.css passen: Karte plus Rand fuer den Schatten).
+const PANEL_W: f64 = 392.0;
+const PANEL_H: f64 = 600.0;
+/// Klickt man bei offenem Panel auf das Tier, schliesst das Panel schon beim Fokusverlust. Ohne diese Frist
+/// wuerde derselbe Klick es sofort wieder oeffnen.
+const PANEL_REOPEN_GUARD: Duration = Duration::from_millis(400);
+
+/// Wann ein Panel zuletzt geschlossen wurde, je Tier.
+struct PanelClosed(Mutex<HashMap<String, Instant>>);
 
 fn agent_windows(app: &AppHandle) -> Vec<WebviewWindow> {
     app.webview_windows()
@@ -52,6 +65,14 @@ fn toggle_visible(app: &AppHandle) {
     let any_visible = windows.iter().any(|w| w.is_visible().unwrap_or(false));
     for window in windows {
         let _ = if any_visible { window.hide() } else { window.show() };
+    }
+    // Offene Panels gehen mit dem Ausblenden zu.
+    if any_visible {
+        for (label, window) in app.webview_windows() {
+            if label.starts_with(PANEL_PREFIX) {
+                let _ = window.destroy();
+            }
+        }
     }
     // Nester (wenn gerade Tiere schlafen) verschwinden und erscheinen mit den Tieren.
     for (label, window) in app.webview_windows() {
@@ -162,6 +183,62 @@ async fn open_nest_window(app: AppHandle, id: String, x: i32, y: i32, edit: bool
 fn close_nest_window(app: AppHandle, id: String) {
     if let Some(window) = app.get_webview_window(&format!("nest-{id}")) {
         let _ = window.destroy();
+    }
+}
+
+/// Schaltet das Panel eines Tiers um. (x, y) ist die gewuenschte obere linke Ecke in physischen Pixeln.
+/// Liefert true, wenn das Panel danach offen ist.
+#[tauri::command]
+async fn toggle_panel(app: AppHandle, closed: tauri::State<'_, PanelClosed>, id: String, x: i32, y: i32) -> Result<bool, String> {
+    if !valid_agent_id(&id) {
+        return Err(format!("Ungueltige Agent-Id: {id}"));
+    }
+    let label = format!("{PANEL_PREFIX}{id}");
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.destroy();
+        closed.0.lock().map_err(|_| "gesperrt".to_string())?.insert(id.clone(), Instant::now());
+        let _ = app.emit_to(format!("{AGENT_PREFIX}{id}"), "panel-closed", ());
+        return Ok(false);
+    }
+    let just_closed = closed
+        .0
+        .lock()
+        .map_err(|_| "gesperrt".to_string())?
+        .get(&id)
+        .is_some_and(|t| t.elapsed() < PANEL_REOPEN_GUARD);
+    if just_closed {
+        return Ok(false);
+    }
+    let window = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(format!("index.html?panel={id}").into()))
+        .title("CommitMull Panel")
+        .inner_size(PANEL_W, PANEL_H)
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .shadow(false)
+        .maximizable(false)
+        .minimizable(false)
+        .visible(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+    window
+        .set_position(tauri::PhysicalPosition::new(x, y))
+        .map_err(|e| e.to_string())?;
+    window.show().map_err(|e| e.to_string())?;
+    let _ = window.set_focus();
+    Ok(true)
+}
+
+#[tauri::command]
+fn close_panel_window(app: AppHandle, closed: tauri::State<'_, PanelClosed>, id: String) {
+    if let Some(window) = app.get_webview_window(&format!("{PANEL_PREFIX}{id}")) {
+        let _ = window.destroy();
+        if let Ok(mut map) = closed.0.lock() {
+            map.insert(id.clone(), Instant::now());
+        }
+        let _ = app.emit_to(format!("{AGENT_PREFIX}{id}"), "panel-closed", ());
     }
 }
 
@@ -377,6 +454,7 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(PanelClosed(Mutex::new(HashMap::new())))
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .plugin(
@@ -408,6 +486,8 @@ pub fn run() {
             open_home,
             open_agent_window,
             close_agent_window,
+            toggle_panel,
+            close_panel_window,
             open_nest_window,
             close_nest_window,
             set_agent_menu,

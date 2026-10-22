@@ -2,6 +2,7 @@ import { Accessory } from "./accessories";
 import { Point } from "./agents";
 import { Species } from "./species";
 import { TrackerViews } from "./trackers";
+import { Alert, Todo } from "./workday";
 
 /** Nachrichten zwischen Hub und Agent-Fenstern (Tauri-Events). */
 
@@ -13,6 +14,10 @@ export const EVENT_AGENT_SLEEP_REQUEST = "agent-sleep-request";
 export const EVENT_SLEEP_ALL = "sleep-all";
 /** Hub an Agent: Sprechblase zeigen, ohne Fressen (Nutzlast: { text }). */
 export const EVENT_AGENT_SAY = "agent-say";
+/** Panel an Tierfenster: bitte das Nest zum Verschieben einblenden (nur das Tierfenster kennt seine Position). */
+export const EVENT_AGENT_NEST_REQUEST = "agent-nest-request";
+/** Rust an Tierfenster: das Panel wurde geschlossen (Fokus verloren, erneuter Klick, Schlafen ...). */
+export const EVENT_PANEL_CLOSED = "panel-closed";
 /** Agent an Geisterfenster: so soll die Zielvorschau aussehen. */
 export const EVENT_GHOST_LOOK = "ghost-look";
 
@@ -26,6 +31,7 @@ export const EVENT_AGENT_CMD = "agent-cmd";
 export const HUB_LABEL = "hub";
 
 export const agentLabel = (id: string) => `agent-${id}`;
+export const panelLabel = (id: string) => `panel-${id}`;
 
 /**
  * Schlafphasen eines Agenten:
@@ -33,13 +39,25 @@ export const agentLabel = (id: string) => `agent-${id}`;
  */
 export type SleepPhase = "awake" | "to-nest" | "asleep" | "back";
 
+export interface ModeInfo {
+  id: string;
+  label: string;
+  accessory: Accessory;
+}
+
 export interface AgentStatePayload {
   id: string;
   name: string;
   species: Species;
   accessory: Accessory;
-  /** Anzeigename der Rolle, z. B. "Finanzen". */
+  /** Anzeigename des aktiven Modus, z. B. "Finanzen". */
   roleLabel: string;
+  /** Alle Modi des Tiers (zum Wechseln) und der aktive. */
+  modes: ModeInfo[];
+  activeMode: string;
+  /** Aufgaben des Tiers (alle) und seine letzten Hinweise. */
+  todos: Todo[];
+  alerts: Alert[];
   /** 1 = satt, 0 = leer */
   hunger: number;
   /** Anzeige der Tracker im Panel (Wochenbudget, Fokuszeit ...). */
@@ -72,6 +90,15 @@ export type AgentCommand =
   | { id: string; type: "focus-toggle" }
   /** Kurse der Investments sofort neu laden. */
   | { id: string; type: "invest-refresh" }
+  /** Modus wechseln. */
+  | { id: string; type: "mode-set"; mode: string }
+  /** Aufgaben: hinzufuegen, abhaken, loeschen, Erledigte aufraeumen. */
+  | { id: string; type: "todo-add"; text: string }
+  | { id: string; type: "todo-toggle"; todo: string }
+  | { id: string; type: "todo-remove"; todo: string }
+  | { id: string; type: "todo-clear-done" }
+  /** Hinweis wegklicken. */
+  | { id: string; type: "alert-dismiss"; alert: string }
   /** Schlafen schicken; das Fenster meldet seine Position (home) und das Nest (gespeichertes oder Standard). */
   | { id: string; type: "sleep"; home: Point; nest: Point }
   /** Aufwecken. */

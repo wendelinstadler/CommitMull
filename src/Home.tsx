@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import "./home.css";
-import { accessoryOf, Agent, AGENTS_CHANGED, ensureAgents, readAgents, saveAgents } from "./agents";
+import { Agent, AGENTS_CHANGED, ensureAgents, modeAccessory, modeLabel, readAgents, saveAgents } from "./agents";
 import { Pet } from "./Pet";
-import { roleInfo } from "./roles";
 import { SPECIES } from "./species";
 
 /** Oeffnet die Verwaltung, optional mit vorgewaehltem Agenten oder "new" fuer einen neuen. */
@@ -53,11 +52,11 @@ export function Home() {
       <div className="home-grid">
         {agents.map((a) => (
           <article key={a.id} className={`home-card ${a.visible ? "" : "off"}`}>
-            <Pet species={a.species} accessory={accessoryOf(a)} state={a.visible ? "idle" : "sleep"} facing="right" size={96} />
+            <Pet species={a.species} accessory={modeAccessory(a.modes[0])} state={a.visible ? "idle" : "sleep"} facing="right" size={96} />
             <div className="home-card-text">
               <strong>{a.name}</strong>
               <small>
-                {SPECIES[a.species].label}, {roleInfo(a.role).label}
+                {SPECIES[a.species].label}, {a.modes.map(modeLabel).join(" / ")}
               </small>
             </div>
             <div className="home-card-actions">

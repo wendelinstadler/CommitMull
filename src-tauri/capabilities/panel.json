@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "panel",
+  "description": "Rechte fuer die Panel-Fenster: Ereignisse senden und empfangen, eigene App-Befehle",
+  "windows": ["panel-*"],
+  "permissions": [
+    "core:default"
+  ]
+}

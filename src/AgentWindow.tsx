@@ -1,20 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, PhysicalPosition, PhysicalSize, Window } from "@tauri-apps/api/window";
+import { getCurrentWindow, PhysicalPosition, Window } from "@tauri-apps/api/window";
 import { Pet } from "./Pet";
-import { Panel } from "./Panel";
-import { aimTarget, defaultNest, measureWindow, moodOf, sleepSpot, useWalker, WindowMeasure } from "./behavior";
+import { aimTarget, defaultNest, measureWindow, moodOf, panelSpot, sleepSpot, useWalker, WindowMeasure } from "./behavior";
 import {
   AgentCommand,
   AgentFedPayload,
   AgentStatePayload,
   EVENT_AGENT_CMD,
   EVENT_AGENT_FED,
+  EVENT_AGENT_NEST_REQUEST,
   EVENT_AGENT_SAY,
   EVENT_AGENT_SLEEP_REQUEST,
   EVENT_AGENT_STATE,
   EVENT_GHOST_LOOK,
+  EVENT_PANEL_CLOSED,
   EVENT_SLEEP_ALL,
   HUB_LABEL,
 } from "./protocol";
@@ -22,24 +23,24 @@ import { PetState } from "./sprites";
 
 const DRAG_THRESHOLD = 4;
 const BUBBLE_MS = 3000;
+/** Hinweise zu Kursen und Aufgaben bleiben laenger stehen als kurze Meldungen. */
+const LONG_BUBBLE_MS = 7000;
 const EAT_MS = 1000;
-/** Fensterhoehe ohne und mit Panel (logische Pixel); das Fenster waechst nach oben. */
-const CLOSED_H = 190;
-/** Hoechste Fensterhoehe mit Panel (logische Pixel), falls das Panel durch viele Eintraege hoch wird. */
-const MAX_H = 900;
 
 interface Props {
   id: string;
 }
 
-/** Fenster eines Agenten: zeigt das Tier an und meldet Eingaben; die Logik liegt im Hub. */
+/**
+ * Fenster eines Tiers: zeigt das Tier an, laeuft, schlaeft und oeffnet bei einem Klick das Panel (eigenes Fenster).
+ * Die Logik liegt im Hub.
+ */
 export function AgentWindow({ id }: Props) {
   const [info, setInfo] = useState<AgentStatePayload | null>(null);
   const [paused, setPaused] = useState(false);
   const [override, setOverride] = useState<PetState | null>(null);
   const [bubble, setBubble] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [autostart, setAutostart] = useState(false);
   const [eating, setEating] = useState(false);
   const bubbleTimer = useRef<number | undefined>(undefined);
   const eatTimer = useRef<number | undefined>(undefined);
@@ -49,9 +50,6 @@ export function AgentWindow({ id }: Props) {
     measure: null,
     active: false,
   });
-  const panelRef = useRef<HTMLDivElement>(null);
-  /** Hoehe des Panels (CSS-Pixel); das Fenster waechst entsprechend mit. */
-  const [panelH, setPanelH] = useState(0);
   const press = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
 
   const hunger = info?.hunger ?? 1;
@@ -71,25 +69,26 @@ export function AgentWindow({ id }: Props) {
 
   const infoRef = useRef(info);
   infoRef.current = info;
-  const panelOpenRef = useRef(panelOpen);
-  panelOpenRef.current = panelOpen;
 
-  /** Klappt das Panel zu und wartet, bis das Fenster wieder die kleine Hoehe hat (Position ist erst dann verlaesslich). */
-  const settleClosed = async () => {
-    if (!panelOpenRef.current) return;
+  /** Schliesst das Panel (falls offen) und wartet kurz, bis das Fenster weg ist. */
+  const closePanel = async () => {
+    await invoke("close_panel_window", { id }).catch(() => {});
     setPanelOpen(false);
-    const win = getCurrentWindow();
-    const scale = await win.scaleFactor();
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 50));
-      if ((await win.outerSize()).height <= Math.round(CLOSED_H * scale) + 2) return;
-    }
+  };
+
+  /** Klick aufs Tier: Panel neben dem Tier oeffnen oder schliessen. */
+  const togglePanel = async () => {
+    const m = await measureWindow();
+    if (!m) return;
+    const spot = panelSpot(m);
+    const open = await invoke<boolean>("toggle_panel", { id, x: spot.x, y: spot.y }).catch(() => false);
+    setPanelOpen(open);
   };
 
   /** Schlafen gehen: Platz und Nest an den Hub melden, der den Gang ins Nest anordnet. */
   const goToSleep = async () => {
     if (infoRef.current?.sleep !== "awake") return;
-    await settleClosed();
+    await closePanel();
     stop();
     const win = getCurrentWindow();
     const pos = await win.outerPosition();
@@ -98,7 +97,7 @@ export function AgentWindow({ id }: Props) {
   };
 
   const editNest = async () => {
-    await settleClosed();
+    await closePanel();
     const nest = infoRef.current?.nest ?? (await defaultNest());
     if (nest) command({ id, type: "nest-edit", nest });
   };
@@ -106,7 +105,7 @@ export function AgentWindow({ id }: Props) {
   const say = (text: string) => {
     setBubble(text);
     window.clearTimeout(bubbleTimer.current);
-    bubbleTimer.current = window.setTimeout(() => setBubble(null), BUBBLE_MS);
+    bubbleTimer.current = window.setTimeout(() => setBubble(null), text.length > 60 ? LONG_BUBBLE_MS : BUBBLE_MS);
   };
 
   const eat = () => {
@@ -117,6 +116,8 @@ export function AgentWindow({ id }: Props) {
 
   const goToSleepRef = useRef(goToSleep);
   goToSleepRef.current = goToSleep;
+  const editNestRef = useRef(editNest);
+  editNestRef.current = editNest;
 
   // Schlafphasen: ins Nest laufen, nach dem Aufwecken zurueck an den Platz. Nach einem App-Start im Schlaf
   // wird das Tier direkt ins Nest gesetzt.
@@ -128,16 +129,15 @@ export function AgentWindow({ id }: Props) {
     const arrive = (ok: boolean) => {
       if (ok && !cancelled) command({ id, type: "arrived" });
     };
-    // Die Ziele gelten fuer das kleine Fenster: erst das Panel zuklappen, dann laufen.
     if (cur.sleep === "to-nest" && cur.nest) {
       const nest = cur.nest;
-      settleClosed()
+      closePanel()
         .then(() => sleepSpot(nest))
         .then((spot) => (cancelled ? false : walkToPos(spot)))
         .then(arrive);
     } else if (cur.sleep === "back" && cur.home) {
       const home = cur.home;
-      settleClosed()
+      closePanel()
         .then(() => (cancelled ? false : walkToPos(home)))
         .then(arrive);
     } else if (cur.sleep === "asleep" && cur.nest && !snapped.current) {
@@ -165,46 +165,21 @@ export function AgentWindow({ id }: Props) {
         if (e.payload.text) sayRef.current(e.payload.text);
       }),
       listen<boolean>("pause-changed", (e) => setPaused(e.payload)),
+      // Wuensche aus dem Panel: das Panel kennt die Fensterposition nicht, das Tierfenster schon.
       listen(EVENT_AGENT_SLEEP_REQUEST, () => goToSleepRef.current()),
+      listen(EVENT_AGENT_NEST_REQUEST, () => editNestRef.current()),
+      listen(EVENT_PANEL_CLOSED, () => setPanelOpen(false)),
       listen<{ text: string }>(EVENT_AGENT_SAY, (e) => sayRef.current(e.payload.text)),
     ]);
     unlisteners.then(() => {
       if (alive) command({ id, type: "ready" });
     });
     invoke<boolean>("get_paused").then(setPaused);
-    invoke<boolean>("get_autostart").then(setAutostart);
     return () => {
       alive = false;
       unlisteners.then((list) => list.forEach((f) => f()));
     };
   }, [id]);
-
-  // Fenster nach oben aufziehen, wenn das Panel offen ist; die Unterkante (das Tier) bleibt stehen.
-  useEffect(() => {
-    const win = getCurrentWindow();
-    (async () => {
-      const [pos, size, scale] = await Promise.all([win.outerPosition(), win.outerSize(), win.scaleFactor()]);
-      const target = panelOpen ? Math.min(MAX_H, CLOSED_H + panelH + 6) : CLOSED_H;
-      const height = Math.round(target * scale);
-      if (height === size.height) return;
-      const bottom = pos.y + size.height;
-      await Promise.all([
-        win.setSize(new PhysicalSize(size.width, height)),
-        win.setPosition(new PhysicalPosition(pos.x, Math.max(0, bottom - height))),
-      ]);
-    })().catch(() => {});
-  }, [panelOpen, panelH]);
-
-  // Panel-Hoehe beobachten (Eintragsliste, Formular ...).
-  const ready = info !== null;
-  useEffect(() => {
-    const el = panelRef.current;
-    if (!el || !panelOpen) return;
-    const observer = new ResizeObserver(() => setPanelH(el.offsetHeight));
-    observer.observe(el);
-    setPanelH(el.offsetHeight);
-    return () => observer.disconnect();
-  }, [panelOpen, ready]);
 
   // Nur im Dev-Modus: Tasten 1-5 schalten Animationen durch, 0 = Automatik,
   // F = Futter geben, H = Hunger um 20 % senken, G = Tracker jetzt abfragen
@@ -212,8 +187,6 @@ export function AgentWindow({ id }: Props) {
     if (!import.meta.env.DEV) return;
     const order: PetState[] = ["idle", "walk", "sleep", "eat", "sad"];
     const onKey = (e: KeyboardEvent) => {
-      // Beim Tippen ins Panel (Betrag, Notiz) keine Dev-Tasten ausloesen.
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const i = Number(e.key) - 1;
       if (i >= 0 && i < order.length) setOverride(order[i]);
       else if (e.key === "0") setOverride(null);
@@ -248,6 +221,8 @@ export function AgentWindow({ id }: Props) {
   canWalkRef.current = canWalk;
   const walkToRef = useRef(walkTo);
   walkToRef.current = walkTo;
+  const togglePanelRef = useRef(togglePanel);
+  togglePanelRef.current = togglePanel;
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       const p = press.current;
@@ -273,7 +248,7 @@ export function AgentWindow({ id }: Props) {
       g.active = false;
       g.win?.hide().catch(() => {});
       if (!p || e.button !== 0) return;
-      if (!p.dragging) setPanelOpen((open) => !open);
+      if (!p.dragging) togglePanelRef.current();
       else if (canWalkRef.current) walkToRef.current(e.screenX, e.screenY);
     };
     window.addEventListener("pointermove", onMove);
@@ -285,13 +260,6 @@ export function AgentWindow({ id }: Props) {
       window.removeEventListener("pointercancel", onUp);
     };
   }, []);
-
-  const togglePause = () => invoke("set_paused", { paused: !paused });
-  const toggleAutostart = () => invoke<boolean>("set_autostart", { enabled: !autostart }).then(setAutostart);
-  const openSettings = () => {
-    setPanelOpen(false);
-    invoke("open_settings");
-  };
 
   // Bis der Hub den ersten Zustand geschickt hat, nichts zeigen (sonst blitzt kurz der falsche Hunger auf).
   if (!info) return null;
@@ -306,32 +274,6 @@ export function AgentWindow({ id }: Props) {
       }}
     >
       {bubble && <div className="bubble">{bubble}</div>}
-      {panelOpen && (
-        <div ref={panelRef}>
-        <Panel
-          name={info.name}
-          subtitle={info.roleLabel}
-          hunger={hunger}
-          mood={mood}
-          paused={paused}
-          sleep={sleep}
-          onSleep={goToSleep}
-          onWake={() => command({ id, type: "wake" })}
-          onNestEdit={editNest}
-          views={info.views}
-          onEntry={(amount, note) => command({ id, type: "entry", amount, note })}
-          onUndo={() => command({ id, type: "entry-undo" })}
-          onFocusToggle={() => command({ id, type: "focus-toggle" })}
-          onInvestRefresh={() => command({ id, type: "invest-refresh" })}
-          autostart={autostart}
-          onTogglePause={togglePause}
-          onToggleAutostart={toggleAutostart}
-          onSettings={openSettings}
-          onQuit={() => invoke("quit_app")}
-          onFeed={import.meta.env.DEV ? () => command({ id, type: "dev-feed" }) : undefined}
-        />
-        </div>
-      )}
       <Pet species={info.species} accessory={info.accessory} board={info.views.entries?.over ? "over" : "ok"} state={state} facing={facing} />
     </div>
   );

@@ -73,6 +73,29 @@ export async function sleepSpot(nest: Point): Promise<Point> {
   };
 }
 
+/** Groesse des Panel-Fensters in logischen Pixeln (muss zu lib.rs passen: PANEL_W, PANEL_H). */
+export const PANEL_W = 392;
+export const PANEL_H = 600;
+/** Rand des Tierfensters links und rechts vom Tier (170 Pixel Fenster, 128 Pixel Tier); das Panel ueberlappt ihn. */
+const PET_MARGIN = 21;
+
+/**
+ * Wo das Panel hinkommt (obere linke Ecke, physische Pixel): links neben dem Tier, oder rechts, wenn links kein Platz ist.
+ * Unterkante auf Hoehe des Tiers, im Arbeitsbereich gehalten.
+ */
+export function panelSpot(m: WindowMeasure): Point {
+  const w = PANEL_W * m.scale;
+  const h = PANEL_H * m.scale;
+  const left = m.pos.x - w + PET_MARGIN * m.scale;
+  const right = m.pos.x + m.size.width - PET_MARGIN * m.scale;
+  const areaRight = m.area.position.x + m.area.size.width;
+  let x = left >= m.area.position.x ? left : right;
+  x = Math.min(Math.max(x, m.area.position.x), areaRight - w);
+  const bottom = m.pos.y + m.size.height;
+  const y = Math.min(Math.max(bottom - h, m.area.position.y), m.area.position.y + m.area.size.height - h);
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
 /** Standardnest: unten am Bildschirmrand (Arbeitsbereich), unter dem aktuellen Standort des Tiers. */
 export async function defaultNest(): Promise<Point | null> {
   const m = await measureWindow();

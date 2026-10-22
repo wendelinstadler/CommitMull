@@ -5,10 +5,13 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./manage.css";
 import { ACCESSORIES, Accessory } from "./accessories";
 import {
-  accessoryOf,
   Agent,
   AGENTS_CHANGED,
   createAgent,
+  createMode,
+  Mode,
+  modeAccessory,
+  modeLabel,
   readAgents,
   Role,
   saveAgents,
@@ -61,6 +64,8 @@ export function SettingsWindow() {
   const [globals, setGlobals] = useState<GlobalSettings>(DEFAULT_SETTINGS);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selected, setSelected] = useState<string>(GENERAL);
+  /** Gewaehlter Modus des gewaehlten Tiers; null = erster. */
+  const [selectedMode, setSelectedMode] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -75,7 +80,7 @@ export function SettingsWindow() {
         const want = pending.current;
         pending.current = null;
         if (want === "new") {
-          const fresh = createAgent("Neuer Agent", "cat", "custom");
+          const fresh = createAgent("Neues Tier", "cat", "custom");
           setAgents([...list, fresh]);
           setSelected(fresh.id);
         } else {
@@ -83,6 +88,7 @@ export function SettingsWindow() {
           setSelected(list.find((a) => a.id === want)?.id ?? list[0]?.id ?? GENERAL);
         }
       });
+      setSelectedMode(null);
       setConfirmDelete(false);
       setMessage(null);
     };
@@ -103,10 +109,11 @@ export function SettingsWindow() {
   }, []);
 
   const agent = agents.find((a) => a.id === selected);
-  const github = agent && trackerOf(agent.trackers, "github");
-  const entries = agent && trackerOf(agent.trackers, "entries");
-  const focus = agent && trackerOf(agent.trackers, "focus");
-  const invest = agent && trackerOf(agent.trackers, "invest");
+  const mode: Mode | undefined = agent && (agent.modes.find((m) => m.id === selectedMode) ?? agent.modes[0]);
+  const github = mode && trackerOf(mode.trackers, "github");
+  const entries = mode && trackerOf(mode.trackers, "entries");
+  const focus = mode && trackerOf(mode.trackers, "focus");
+  const invest = mode && trackerOf(mode.trackers, "invest");
 
   const updateGlobal = <K extends keyof GlobalSettings>(key: K, value: GlobalSettings[K]) =>
     setGlobals((g) => ({ ...g, [key]: value }));
@@ -114,14 +121,20 @@ export function SettingsWindow() {
   const updateAgent = (patch: Partial<Agent>) =>
     setAgents((list) => list.map((a) => (a.id === selected ? { ...a, ...patch } : a)));
 
-  const updateTracker = <T extends Tracker>(type: T["type"], patch: Partial<T>) =>
+  /** Aendert den gewaehlten Modus des gewaehlten Tiers. */
+  const updateMode = (patch: Partial<Mode>) => {
+    if (!mode) return;
     setAgents((list) =>
       list.map((a) =>
-        a.id === selected
-          ? { ...a, trackers: a.trackers.map((t) => (t.type === type ? ({ ...t, ...patch } as Tracker) : t)) }
-          : a,
+        a.id === selected ? { ...a, modes: a.modes.map((m) => (m.id === mode.id ? { ...m, ...patch } : m)) } : a,
       ),
     );
+  };
+
+  const updateTracker = <T extends Tracker>(type: T["type"], patch: Partial<T>) => {
+    if (!mode) return;
+    updateMode({ trackers: mode.trackers.map((t) => (t.type === type ? ({ ...t, ...patch } as Tracker) : t)) });
+  };
 
   const updateGithub = (patch: Partial<GithubTracker>) => updateTracker<GithubTracker>("github", patch);
   const updateEntries = (patch: Partial<EntriesTracker>) => updateTracker<EntriesTracker>("entries", patch);
@@ -137,25 +150,41 @@ export function SettingsWindow() {
 
   /** Rollenwechsel: vorhandene Futterquellen bleiben, die der Vorlage fehlenden kommen dazu. */
   const setRole = (role: Role) => {
-    const have = agent?.trackers ?? [];
-    const add = roleInfo(role).trackers().filter((t) => !have.some((h) => h.type === t.type));
-    updateAgent({
+    if (!mode) return;
+    const add = roleInfo(role).trackers().filter((t) => !mode.trackers.some((h) => h.type === t.type));
+    updateMode({
       role,
-      accessory: role === "custom" ? agent?.accessory ?? "none" : undefined,
-      trackers: [...have, ...add],
+      accessory: role === "custom" ? mode.accessory ?? "none" : undefined,
+      trackers: [...mode.trackers, ...add],
     });
   };
 
   const toggleTracker = (type: TrackerType, on: boolean) => {
+    if (!mode) return;
+    const without = mode.trackers.filter((t) => t.type !== type);
+    updateMode({ trackers: on ? [...without, defaultTracker(type as "github")] : without });
+  };
+
+  /** Neuer Modus: die erste Rolle, die das Tier noch nicht hat, sonst "Eigene". */
+  const addMode = () => {
     if (!agent) return;
-    const without = agent.trackers.filter((t) => t.type !== type);
-    updateAgent({ trackers: on ? [...without, defaultTracker(type as "github")] : without });
+    const role = (["dev", "finance", "learning", "fitness", "habits"] as Role[]).find((r) => !agent.modes.some((m) => m.role === r)) ?? "custom";
+    const fresh = createMode(agent.id, role);
+    updateAgent({ modes: [...agent.modes, fresh] });
+    setSelectedMode(fresh.id);
+  };
+
+  const removeMode = () => {
+    if (!agent || !mode || agent.modes.length < 2) return;
+    updateAgent({ modes: agent.modes.filter((m) => m.id !== mode.id) });
+    setSelectedMode(null);
   };
 
   const addAgent = () => {
-    const fresh = createAgent("Neuer Agent", "cat", "custom");
+    const fresh = createAgent("Neues Tier", "cat", "custom");
     setAgents((list) => [...list, fresh]);
     setSelected(fresh.id);
+    setSelectedMode(null);
     setConfirmDelete(false);
     setMessage(null);
   };
@@ -191,27 +220,25 @@ export function SettingsWindow() {
     for (const a of agents) {
       if (!a.name.trim()) {
         setSelected(a.id);
-        setMessage({ text: "Jeder Agent braucht einen Namen.", error: true });
+        setMessage({ text: "Jedes Tier braucht einen Namen.", error: true });
         return;
       }
-      const gh = trackerOf(a.trackers, "github");
-      if (gh && !gh.user.trim()) {
-        setSelected(a.id);
-        setMessage({ text: `${a.name}: Der GitHub-Benutzername darf nicht leer sein.`, error: true });
-        return;
-      }
-      const inv = trackerOf(a.trackers, "invest");
-      const invError = inv && validateInvest(inv);
-      if (invError) {
-        setSelected(a.id);
-        setMessage({ text: `${a.name}: ${invError}`, error: true });
-        return;
-      }
-      const en = trackerOf(a.trackers, "entries");
-      if (en && (!en.label.trim() || (en.kind === "expense" && (!(en.budget > 0) || !en.currency.trim())))) {
-        setSelected(a.id);
-        setMessage({ text: `${a.name}: Eintraege brauchen einen Namen, bei Ausgaben auch Budget und Waehrung.`, error: true });
-        return;
+      for (const m of a.modes) {
+        const where = a.modes.length > 1 ? `${a.name} (${modeLabel(m)})` : a.name;
+        const fail = (text: string) => {
+          setSelected(a.id);
+          setSelectedMode(m.id);
+          setMessage({ text: `${where}: ${text}`, error: true });
+        };
+        const gh = trackerOf(m.trackers, "github");
+        if (gh && !gh.user.trim()) return fail("Der GitHub-Benutzername darf nicht leer sein.");
+        const inv = trackerOf(m.trackers, "invest");
+        const invError = inv && validateInvest(inv);
+        if (invError) return fail(invError);
+        const en = trackerOf(m.trackers, "entries");
+        if (en && (!en.label.trim() || (en.kind === "expense" && (!(en.budget > 0) || !en.currency.trim())))) {
+          return fail("Eintraege brauchen einen Namen, bei Ausgaben auch Budget und Waehrung.");
+        }
       }
     }
     setBusy(true);
@@ -224,11 +251,15 @@ export function SettingsWindow() {
         agents.map((a) => ({
           ...a,
           name: a.name.trim(),
-          trackers: a.trackers.map((t) => {
-            if (t.type === "github") return { ...t, user: t.user.trim(), token: t.token.trim() };
-            if (t.type === "entries") return { ...t, label: t.label.trim(), currency: t.currency.trim() };
-            return t;
-          }),
+          modes: a.modes.map((m) => ({
+            ...m,
+            label: m.label?.trim() || undefined,
+            trackers: m.trackers.map((t) => {
+              if (t.type === "github") return { ...t, user: t.user.trim(), token: t.token.trim() };
+              if (t.type === "entries") return { ...t, label: t.label.trim(), currency: t.currency.trim() };
+              return t;
+            }),
+          })),
         })),
       );
       await getCurrentWindow().hide();
@@ -242,7 +273,7 @@ export function SettingsWindow() {
   return (
     <div className="manage">
       <aside className="manage-side">
-        <h1>Agenten</h1>
+        <h1>Tiere</h1>
         <div className="manage-list">
           {agents.map((a) => (
             <button
@@ -253,17 +284,17 @@ export function SettingsWindow() {
                 setConfirmDelete(false);
               }}
             >
-              <Pet species={a.species} accessory={accessoryOf(a)} state="idle" facing="right" size={64} />
+              <Pet species={a.species} accessory={modeAccessory(a.modes[0])} state="idle" facing="right" size={64} />
               <span className="manage-item-text">
                 <strong>{a.name || "(ohne Namen)"}</strong>
-                <small>{a.visible ? roleInfo(a.role).label : `${roleInfo(a.role).label}, aus`}</small>
+                <small>{a.modes.map(modeLabel).join(", ")}{a.visible ? "" : ", aus"}</small>
               </span>
             </button>
           ))}
-          {agents.length === 0 && <p className="manage-empty">Noch keine Agenten.</p>}
+          {agents.length === 0 && <p className="manage-empty">Noch keine Tiere.</p>}
         </div>
         <button className="manage-add" onClick={addAgent}>
-          Neuer Agent
+          Neues Tier
         </button>
         <button
           className={`manage-general ${selected === GENERAL ? "selected" : ""}`}
@@ -278,7 +309,7 @@ export function SettingsWindow() {
           {agent && (
             <>
               <div className="manage-head">
-                <Pet species={agent.species} accessory={accessoryOf(agent)} state="idle" facing="right" size={128} />
+                <Pet species={agent.species} accessory={mode ? modeAccessory(mode) : "none"} state="idle" facing="right" size={128} />
                 <div className="manage-head-fields">
                   <label>
                     <span>Name</span>
@@ -312,33 +343,74 @@ export function SettingsWindow() {
                 ))}
               </div>
 
-              <h2>Rolle</h2>
-              <label>
-                <span>Vorlage</span>
-                <select value={agent.role} onChange={(e) => setRole(e.target.value as Role)}>
-                  {ROLES.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-                <small>{roleInfo(agent.role).hint}</small>
-              </label>
-
-              {agent.role === "custom" && (
-                <label>
-                  <span>Accessoire</span>
-                  <select
-                    value={agent.accessory ?? "none"}
-                    onChange={(e) => updateAgent({ accessory: e.target.value as Accessory })}
+              <h2>Modi</h2>
+              <p className="manage-hint">
+                Ein Tier kann mehrere Modi haben (Informatiker, Finanzen, Lernen ...). Im Panel wechselst du mit einem Klick, jeder Modus
+                hat sein Accessoire, seine Futterquellen und seine Daten.
+              </p>
+              <div className="manage-modes" role="tablist" aria-label="Modi">
+                {agent.modes.map((m) => (
+                  <button
+                    key={m.id}
+                    role="tab"
+                    aria-selected={m.id === mode?.id}
+                    className={m.id === mode?.id ? "selected" : ""}
+                    onClick={() => setSelectedMode(m.id)}
                   >
-                    {ACCESSORIES.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    {modeLabel(m)}
+                  </button>
+                ))}
+                <button className="add" onClick={addMode}>
+                  + Modus
+                </button>
+              </div>
+
+              {mode && (
+                <>
+                  <label>
+                    <span>Vorlage</span>
+                    <select value={mode.role} onChange={(e) => setRole(e.target.value as Role)}>
+                      {ROLES.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
+                    <small>{roleInfo(mode.role).hint}</small>
+                  </label>
+
+                  <label>
+                    <span>Name des Modus (optional)</span>
+                    <input
+                      value={mode.label ?? ""}
+                      placeholder={roleInfo(mode.role).label}
+                      maxLength={20}
+                      onChange={(e) => updateMode({ label: e.target.value })}
+                    />
+                  </label>
+
+                  {mode.role === "custom" && (
+                    <label>
+                      <span>Accessoire</span>
+                      <select
+                        value={mode.accessory ?? "none"}
+                        onChange={(e) => updateMode({ accessory: e.target.value as Accessory })}
+                      >
+                        {ACCESSORIES.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+
+                  {agent.modes.length > 1 && (
+                    <button className="manage-remove-mode" onClick={removeMode}>
+                      Diesen Modus entfernen
+                    </button>
+                  )}
+                </>
               )}
 
               <h2>Futterquellen</h2>

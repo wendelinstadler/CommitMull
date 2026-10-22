@@ -61,6 +61,10 @@ export interface InvestTracker {
   baseCurrency: string;
   refreshMinutes: number;
   positions: Position[];
+  /** Hinweis, wenn das Depot heute um mindestens so viel Prozent steigt oder faellt (0 = aus, Standard 3). */
+  alertDayPct?: number;
+  /** Hinweis, wenn eine einzelne Position heute um mindestens so viel Prozent steigt oder faellt (0 = aus, Standard 5). */
+  alertPositionPct?: number;
 }
 
 export type Tracker = GithubTracker | EntriesTracker | FocusTracker | InvestTracker;
@@ -108,7 +112,7 @@ export function defaultTracker(type: TrackerType, kind: EntriesTracker["kind"] =
     case "focus":
       return { type, blockMinutes: 25, foodPercent: 25, blocked: [], graceSeconds: DEFAULT_GRACE_SECONDS };
     case "invest":
-      return { type, baseCurrency: "CHF", refreshMinutes: 15, positions: [] };
+      return { type, baseCurrency: "CHF", refreshMinutes: 15, positions: [], alertDayPct: 3, alertPositionPct: 5 };
   }
 }
 
@@ -195,7 +199,13 @@ export interface InvestView {
   loading: boolean;
 }
 
+/** GitHub-Modus: nur der Benutzer wird angezeigt, das Futter kommt automatisch. */
+export interface GithubView {
+  user: string;
+}
+
 export interface TrackerViews {
+  github?: GithubView;
   entries?: EntriesView;
   focus?: FocusView;
   invest?: InvestView;

@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { AgentWindow } from "./AgentWindow";
 import { Home } from "./Home";
 import { NestWindow } from "./NestWindow";
+import { PanelWindow } from "./panel/PanelWindow";
 import { Hub } from "./Hub";
 import { Ghost } from "./Ghost";
 import { Sheet } from "./Sheet";
@@ -15,6 +16,8 @@ function view() {
   if (import.meta.env.DEV && params.has("sheet")) return <Sheet />;
   if (params.has("ghost")) return <Ghost />;
   if (params.has("home")) return <Home />;
+  const panel = params.get("panel");
+  if (panel) return <PanelWindow id={panel} />;
   const nest = params.get("nest");
   if (nest) return <NestWindow id={nest} edit={params.has("edit")} />;
   if (params.has("settings")) return <SettingsWindow />;

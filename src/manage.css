@@ -372,3 +372,50 @@
 .positions .icon {
   padding: 3px 8px;
 }
+
+/* Modi eines Tiers */
+
+.manage-hint {
+  margin: -2px 0 10px;
+  color: #6b4a52;
+  font-size: 12px;
+}
+
+.manage-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.manage-modes button {
+  padding: 5px 14px;
+  background: #fff;
+  border: 1px solid #c9a9b0;
+  border-radius: 999px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.manage-modes button.selected {
+  background: #7a3b4a;
+  border-color: #7a3b4a;
+  color: #fff;
+}
+
+.manage-modes button.add {
+  border-style: dashed;
+  color: #7a3b4a;
+}
+
+.manage-remove-mode {
+  margin: 2px 0 6px;
+  padding: 4px 0;
+  background: none;
+  border: 0;
+  color: #a3281f;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

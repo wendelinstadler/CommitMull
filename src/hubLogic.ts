@@ -1,19 +1,23 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen, UnlistenFn } from "@tauri-apps/api/event";
 import {
-  accessoryOf,
+  activeModeOf,
   Agent,
   AgentState,
-  Point,
   AGENTS_CHANGED,
   deleteAgentData,
+  deleteModeData,
   ensureAgents,
   loadAgentState,
+  Mode,
+  modeAccessory,
+  modeLabel,
+  Point,
   readAgents,
   saveAgents,
   saveAgentState,
 } from "./agents";
-import { roleInfo } from "./roles";
+import { fetchSnapshot, investView, Snapshot } from "./investTracker";
 import {
   AgentCommand,
   agentLabel,
@@ -26,11 +30,11 @@ import {
   EVENT_AGENT_STATE,
   EVENT_AGENT_TOGGLE,
   EVENT_SLEEP_ALL,
+  panelLabel,
   SleepPhase,
 } from "./protocol";
 import { DEFAULT_SETTINGS, loadSettings, SETTINGS_CHANGED } from "./settings";
 import { getStore, saveValue } from "./store";
-import { fetchSnapshot, investView, Snapshot } from "./investTracker";
 import { githubPlugin } from "./trackerPlugins";
 import {
   Entry,
@@ -47,8 +51,23 @@ import {
   trackerOf,
   TrackerViews,
 } from "./trackers";
+import {
+  Alert,
+  alertsKey,
+  freshAlerts,
+  investAlerts,
+  makeAlert,
+  makeTodo,
+  MAX_ALERTS,
+  MAX_TODOS,
+  Todo,
+  todosKey,
+  toggleTodo,
+} from "./workday";
 
 const TICK_MS = 30_000;
+/** Futter fuer eine erledigte Aufgabe (Anteil am Hunger); jede Aufgabe fuettert nur einmal. */
+const TODO_FOOD = 0.1;
 
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
 
@@ -59,17 +78,24 @@ const validPoint = (p: unknown): Point | null => {
   return q && ok(q.x) && ok(q.y) ? { x: Math.round(q.x), y: Math.round(q.y) } : null;
 };
 
-const githubOf = (agent: Agent) => trackerOf(agent.trackers, "github");
+/** Ein Modus samt seinem Tier. */
+interface Unit {
+  agent: Agent;
+  mode: Mode;
+}
 
-/** Futter pro Ereignis des ersten fuetternden Trackers (fuer die Dev-Taste F), sonst 25 %. Investments fuettern nicht. */
-const defaultFood = (agent: Agent) => {
-  const feeder = agent.trackers.find((t) => t.type !== "invest");
+/** Futter pro Ereignis des ersten fuetternden Trackers des Modus (fuer die Dev-Taste F), sonst 25 %. Investments fuettern nicht. */
+const defaultFood = (mode: Mode) => {
+  const feeder = mode.trackers.find((t) => t.type !== "invest");
   return (feeder ? feeder.foodPercent : 25) / 100;
 };
 
 /**
- * Die zentrale Logik: Hunger, Tracker und die Agent-Fenster. Die Fenster zeigen nur an und melden
- * Eingaben. Nur der Hub schreibt Agentenzustand, damit sich Fenster nicht in die Quere kommen.
+ * Die zentrale Logik: Hunger, Schlaf, Aufgaben, Tracker und die Tierfenster. Die Fenster zeigen nur an und melden
+ * Eingaben. Nur der Hub schreibt den Zustand, damit sich Fenster nicht in die Quere kommen.
+ *
+ * Zwei Ebenen: Am Tier (agent.id) haengen Hunger, Schlaf, Nest, Aufgaben und Hinweise. Am Modus (mode.id) haengen die
+ * Daten der Tracker (Eintraege, Kurse, Fokus, GitHub). Befehle aus den Fenstern gelten fuer den aktiven Modus.
  * Gibt eine Funktion zum Beenden zurueck.
  */
 export function startHub(): () => void {
@@ -77,69 +103,90 @@ export function startHub(): () => void {
   let paused = false;
   let hungerHours = DEFAULT_SETTINGS.hungerHours;
   let agents: Agent[] = [];
+
+  // --- Ebene Tier
   const hunger = new Map<string, number>();
-  /** Schlafdaten je Agent (Nest, Platz, Futter im Wartestand); der Rest von AgentState neben dem Hunger. */
+  /** Schlafdaten und aktiver Modus je Tier; der Rest von AgentState neben dem Hunger. */
   const extra = new Map<string, Omit<AgentState, "hunger">>();
   const phase = new Map<string, SleepPhase>();
+  const todos = new Map<string, Todo[]>();
+  const alerts = new Map<string, Alert[]>();
   const phaseOf = (id: string): SleepPhase => phase.get(id) ?? "awake";
   /** Schlaeft: auf dem Weg ins Nest oder im Nest. Dann steht der Hunger still und Futter wartet. */
   const isAsleep = (id: string) => phaseOf(id) === "to-nest" || phaseOf(id) === "asleep";
+
+  // --- Ebene Modus
   const pollTimers = new Map<string, { timer: number; config: string }>();
   const polling = new Set<string>();
-  /** Manuelle Eintraege und Fokus-Sitzungen je Agent (der Hub ist der einzige Schreiber). */
+  /** Manuelle Eintraege und Fokus-Sitzungen je Modus (der Hub ist der einzige Schreiber). */
   const entryLogs = new Map<string, Entry[]>();
   const focusLogs = new Map<string, FocusSession[]>();
   /** Laufende Fokus-Timer: Startzeit und wie viele volle Zeitspannen schon Futter gaben. */
   const focusRuns = new Map<string, { startedAt: number; credited: number }>();
   /** Gesperrte Programme, die gerade offen sind: seit wann, und ob schon versucht wurde, sie zu schliessen. */
   const blockWatch = new Map<string, { since: number; attempted: boolean }>();
-  /** In der laufenden Fokus-Sitzung geschlossene Programme je Agent. */
+  /** In der laufenden Fokus-Sitzung geschlossene Programme je Modus. */
   const focusClosed = new Map<string, number>();
   let blockTimer: number | undefined;
   let blockChecking = false;
-  /** Zuletzt geladene Kurse der Depots, Aktualisierungs-Timer und laufende Abfragen. */
+  /** Zuletzt geladene Kurse der Depots, Aktualisierungs-Timer und laufende Abfragen je Modus. */
   const investSnaps = new Map<string, Snapshot>();
   const investTimers = new Map<string, { timer: number; config: string }>();
   const investLoading = new Set<string>();
+
   const unlisteners: UnlistenFn[] = [];
   let lastTick = Date.now();
 
   const find = (id: string) => agents.find((a) => a.id === id);
+  const units = (): Unit[] => agents.flatMap((agent) => agent.modes.map((mode) => ({ agent, mode })));
+  const unitOf = (modeId: string) => units().find((u) => u.mode.id === modeId);
+  const activeOf = (agent: Agent): Mode => activeModeOf(agent, extra.get(agent.id)?.mode);
 
-  const buildViews = (agent: Agent): TrackerViews => {
+  const buildViews = (mode: Mode): TrackerViews => {
     const now = Date.now();
     const views: TrackerViews = {};
-    const entries = trackerOf(agent.trackers, "entries");
-    if (entries) views.entries = entriesView(entries, entryLogs.get(agent.id) ?? [], now);
-    const focus = trackerOf(agent.trackers, "focus");
+    const github = trackerOf(mode.trackers, "github");
+    if (github) views.github = { user: github.user };
+    const entries = trackerOf(mode.trackers, "entries");
+    if (entries) views.entries = entriesView(entries, entryLogs.get(mode.id) ?? [], now);
+    const focus = trackerOf(mode.trackers, "focus");
     if (focus) {
-      views.focus = focusView(focus, focusLogs.get(agent.id) ?? [], focusRuns.get(agent.id), now, focusClosed.get(agent.id) ?? 0);
+      views.focus = focusView(focus, focusLogs.get(mode.id) ?? [], focusRuns.get(mode.id), now, focusClosed.get(mode.id) ?? 0);
     }
-    const invest = trackerOf(agent.trackers, "invest");
-    if (invest) views.invest = investView(invest, investSnaps.get(agent.id), investLoading.has(agent.id));
+    const invest = trackerOf(mode.trackers, "invest");
+    if (invest) views.invest = investView(invest, investSnaps.get(mode.id), investLoading.has(mode.id));
     return views;
   };
 
   const sendState = (agent: Agent) => {
+    const mode = activeOf(agent);
     const payload: AgentStatePayload = {
       id: agent.id,
       name: agent.name,
       species: agent.species,
-      accessory: accessoryOf(agent),
-      roleLabel: roleInfo(agent.role).label,
+      accessory: modeAccessory(mode),
+      roleLabel: modeLabel(mode),
+      modes: agent.modes.map((m) => ({ id: m.id, label: modeLabel(m), accessory: modeAccessory(m) })),
+      activeMode: mode.id,
+      todos: todos.get(agent.id) ?? [],
+      alerts: alerts.get(agent.id) ?? [],
       hunger: hunger.get(agent.id) ?? 1,
-      views: buildViews(agent),
+      views: buildViews(mode),
       sleep: phaseOf(agent.id),
       nest: extra.get(agent.id)?.nest ?? null,
       home: extra.get(agent.id)?.home ?? null,
     };
+    // Das Tierfenster und (falls offen) das Panel bekommen denselben Zustand.
     emitTo(agentLabel(agent.id), EVENT_AGENT_STATE, payload).catch(() => {});
+    emitTo(panelLabel(agent.id), EVENT_AGENT_STATE, payload).catch(() => {});
   };
 
   const persist = (id: string) =>
     saveAgentState(id, { hunger: hunger.get(id) ?? 1, ...extra.get(id) }).catch((e) =>
       console.warn("Speichern fehlgeschlagen:", e),
     );
+
+  const save = (key: string, value: unknown) => saveValue(key, value).catch((e) => console.warn("Speichern fehlgeschlagen:", e));
 
   const setHunger = (id: string, value: number) => {
     hunger.set(id, clamp(value));
@@ -163,42 +210,48 @@ export function startHub(): () => void {
     emitTo(agentLabel(id), EVENT_AGENT_FED, payload).catch(() => {});
   };
 
-  const poll = async (id: string) => {
-    const agent = find(id);
-    const tracker = agent && githubOf(agent);
-    if (!agent || !tracker || !githubPlugin.ready(tracker) || polling.has(id)) return;
-    polling.add(id);
+  const say = (id: string, text: string) => {
+    emitTo(agentLabel(id), EVENT_AGENT_SAY, { text }).catch(() => {});
+  };
+
+  /** Fragt GitHub fuer einen Modus ab (nur wenn er einen GitHub-Tracker hat). */
+  const poll = async (modeId: string) => {
+    const unit = unitOf(modeId);
+    const tracker = unit && trackerOf(unit.mode.trackers, "github");
+    if (!unit || !tracker || !githubPlugin.ready(tracker) || polling.has(modeId)) return;
+    polling.add(modeId);
     try {
-      const event = await githubPlugin.poll(id, tracker);
-      if (alive && event) feed(id, event.amount, event.text);
+      const event = await githubPlugin.poll(modeId, tracker);
+      if (alive && event) feed(unit.agent.id, event.amount, event.text);
     } catch (e) {
       console.warn("GitHub-Abfrage fehlgeschlagen:", e);
     } finally {
-      polling.delete(id);
+      polling.delete(modeId);
     }
   };
 
-  /** Startet Abfragen nur neu, wenn sich die Tracker-Angaben eines Agenten geaendert haben (spart Anfragen). */
+  /** Startet Abfragen nur neu, wenn sich die Tracker-Angaben eines Modus geaendert haben (spart Anfragen). */
   const syncPolling = () => {
-    for (const [id, entry] of [...pollTimers]) {
-      const tracker = find(id) && githubOf(find(id)!);
+    for (const [modeId, entry] of [...pollTimers]) {
+      const unit = unitOf(modeId);
+      const tracker = unit && trackerOf(unit.mode.trackers, "github");
       if (!tracker || JSON.stringify(tracker) !== entry.config) {
         window.clearInterval(entry.timer);
-        pollTimers.delete(id);
+        pollTimers.delete(modeId);
       }
     }
-    for (const agent of agents) {
-      const tracker = githubOf(agent);
-      if (!tracker || pollTimers.has(agent.id)) continue;
-      poll(agent.id);
-      pollTimers.set(agent.id, {
-        timer: window.setInterval(() => poll(agent.id), githubPlugin.intervalMs(tracker)),
+    for (const { mode } of units()) {
+      const tracker = trackerOf(mode.trackers, "github");
+      if (!tracker || pollTimers.has(mode.id)) continue;
+      poll(mode.id);
+      pollTimers.set(mode.id, {
+        timer: window.setInterval(() => poll(mode.id), githubPlugin.intervalMs(tracker)),
         config: JSON.stringify(tracker),
       });
     }
   };
 
-  /** Tray-Menue: alle Agenten mit Haken, auch die deaktivierten. */
+  /** Tray-Menue: alle Tiere mit Haken, auch die deaktivierten. */
   const syncMenu = (attempt = 0) => {
     const entries = agents.map((a) => ({ id: a.id, name: a.name, visible: a.visible }));
     invoke("set_agent_menu", { agents: entries }).catch((e) => {
@@ -206,11 +259,6 @@ export function startHub(): () => void {
       if (attempt < 5 && alive) window.setTimeout(() => syncMenu(attempt + 1), 1000);
       else console.warn("Menue fehlgeschlagen:", e);
     });
-  };
-
-  /** Beendet einen laufenden Fokus-Timer und speichert die Sitzung, wenn mindestens eine Minute zusammenkam. */
-  const say = (id: string, text: string) => {
-    emitTo(agentLabel(id), EVENT_AGENT_SAY, { text }).catch(() => {});
   };
 
   /**
@@ -224,10 +272,10 @@ export function startHub(): () => void {
     blockChecking = true;
     try {
       let watching = false;
-      for (const agent of agents) {
-        const tracker = trackerOf(agent.trackers, "focus");
+      for (const { agent, mode } of units()) {
+        const tracker = trackerOf(mode.trackers, "focus");
         const list = tracker?.blocked ?? [];
-        if (!tracker || !focusRuns.has(agent.id) || list.length === 0) continue;
+        if (!tracker || !focusRuns.has(mode.id) || list.length === 0) continue;
         watching = true;
         let open: string[] = [];
         try {
@@ -239,11 +287,11 @@ export function startHub(): () => void {
         const graceMs = (tracker.graceSeconds ?? 10) * 1000;
         const now = Date.now();
         for (const exe of list) {
-          const key = `${agent.id}|${exe}`;
+          const key = `${mode.id}|${exe}`;
           const watch = blockWatch.get(key);
           if (!open.includes(exe)) {
             if (watch?.attempted) {
-              focusClosed.set(agent.id, (focusClosed.get(agent.id) ?? 0) + 1);
+              focusClosed.set(mode.id, (focusClosed.get(mode.id) ?? 0) + 1);
               say(agent.id, `${prettyApp(exe)} ist zu. Weiter so!`);
               sendState(agent);
             }
@@ -271,59 +319,75 @@ export function startHub(): () => void {
     checkBlocked();
   };
 
+  /** Grosse Kursbewegungen: Hinweis in der Liste und als Sprechblase (nicht zweimal in kurzer Zeit zum selben Ausloeser). */
+  const raiseInvestAlerts = (unit: Unit) => {
+    const tracker = trackerOf(unit.mode.trackers, "invest");
+    if (!tracker) return;
+    const view = investView(tracker, investSnaps.get(unit.mode.id));
+    const existing = alerts.get(unit.agent.id) ?? [];
+    const fresh = freshAlerts(investAlerts(view, tracker), existing.filter((a) => a.modeId === unit.mode.id));
+    if (fresh.length === 0) return;
+    const created = fresh.map((f) => makeAlert(f.key, f.text, unit.mode.id));
+    alerts.set(unit.agent.id, [...created, ...existing].slice(0, MAX_ALERTS));
+    save(alertsKey(unit.agent.id), alerts.get(unit.agent.id));
+    if (!isAsleep(unit.agent.id)) say(unit.agent.id, created.slice(0, 2).map((a) => a.text).join(" "));
+  };
+
   /** Laedt die Kurse eines Depots neu und zeigt sie an. */
-  const refreshInvest = async (id: string) => {
-    const agent = find(id);
-    const tracker = agent && trackerOf(agent.trackers, "invest");
-    if (!agent || !tracker || tracker.positions.length === 0 || investLoading.has(id)) return;
-    investLoading.add(id);
-    sendState(agent);
+  const refreshInvest = async (modeId: string) => {
+    const unit = unitOf(modeId);
+    const tracker = unit && trackerOf(unit.mode.trackers, "invest");
+    if (!unit || !tracker || tracker.positions.length === 0 || investLoading.has(modeId)) return;
+    investLoading.add(modeId);
+    sendState(unit.agent);
     try {
-      const snap = await fetchSnapshot(tracker, investSnaps.get(id));
+      const snap = await fetchSnapshot(tracker, investSnaps.get(modeId));
       if (!alive) return;
-      investSnaps.set(id, snap);
-      await saveValue(quotesKey(id), snap);
+      investSnaps.set(modeId, snap);
+      await saveValue(quotesKey(modeId), snap);
+      raiseInvestAlerts(unit);
     } catch (e) {
       console.warn("Kursabfrage fehlgeschlagen:", e);
     } finally {
-      investLoading.delete(id);
-      const current = find(id);
+      investLoading.delete(modeId);
+      const current = find(unit.agent.id);
       if (current) sendState(current);
     }
   };
 
-  /** Kurs-Timer pro Depot: nur neu starten, wenn sich Depot oder Intervall aendern; nur fuer aktive Agenten. */
+  /** Kurs-Timer pro Depot: nur neu starten, wenn sich Depot oder Intervall aendern; nur fuer aktive Tiere (auch im anderen Modus). */
   const syncInvest = () => {
-    for (const [id, entry] of [...investTimers]) {
-      const agent = find(id);
-      const tracker = agent && trackerOf(agent.trackers, "invest");
-      if (!agent?.visible || !tracker || tracker.positions.length === 0 || JSON.stringify(tracker) !== entry.config) {
+    for (const [modeId, entry] of [...investTimers]) {
+      const unit = unitOf(modeId);
+      const tracker = unit && trackerOf(unit.mode.trackers, "invest");
+      if (!unit?.agent.visible || !tracker || tracker.positions.length === 0 || JSON.stringify(tracker) !== entry.config) {
         window.clearInterval(entry.timer);
-        investTimers.delete(id);
+        investTimers.delete(modeId);
       }
     }
-    for (const agent of agents) {
-      const tracker = trackerOf(agent.trackers, "invest");
-      if (!agent.visible || !tracker || tracker.positions.length === 0 || investTimers.has(agent.id)) continue;
-      refreshInvest(agent.id);
-      investTimers.set(agent.id, {
-        timer: window.setInterval(() => refreshInvest(agent.id), Math.max(5, tracker.refreshMinutes) * 60_000),
+    for (const { agent, mode } of units()) {
+      const tracker = trackerOf(mode.trackers, "invest");
+      if (!agent.visible || !tracker || tracker.positions.length === 0 || investTimers.has(mode.id)) continue;
+      refreshInvest(mode.id);
+      investTimers.set(mode.id, {
+        timer: window.setInterval(() => refreshInvest(mode.id), Math.max(5, tracker.refreshMinutes) * 60_000),
         config: JSON.stringify(tracker),
       });
     }
   };
 
-  const stopFocus = (id: string) => {
-    for (const key of [...blockWatch.keys()]) if (key.startsWith(`${id}|`)) blockWatch.delete(key);
-    focusClosed.delete(id);
-    const run = focusRuns.get(id);
+  /** Beendet einen laufenden Fokus-Timer und speichert die Sitzung, wenn mindestens eine Minute zusammenkam. */
+  const stopFocus = (modeId: string) => {
+    for (const key of [...blockWatch.keys()]) if (key.startsWith(`${modeId}|`)) blockWatch.delete(key);
+    focusClosed.delete(modeId);
+    const run = focusRuns.get(modeId);
     if (!run) return;
-    focusRuns.delete(id);
+    focusRuns.delete(modeId);
     const minutes = Math.floor((Date.now() - run.startedAt) / 60_000);
     if (minutes < 1) return;
-    const sessions = [...(focusLogs.get(id) ?? []), { ts: run.startedAt, minutes }].slice(-MAX_LOG);
-    focusLogs.set(id, sessions);
-    saveValue(focusKey(id), sessions).catch((e) => console.warn("Speichern fehlgeschlagen:", e));
+    const sessions = [...(focusLogs.get(modeId) ?? []), { ts: run.startedAt, minutes }].slice(-MAX_LOG);
+    focusLogs.set(modeId, sessions);
+    save(focusKey(modeId), sessions);
   };
 
   const openNest = (agent: Agent, edit: boolean) => {
@@ -334,7 +398,7 @@ export function startHub(): () => void {
     );
   };
 
-  /** Alle sichtbaren Agenten schlafen schicken; schlafen schon alle, werden alle aufgeweckt. */
+  /** Alle sichtbaren Tiere schlafen schicken; schlafen schon alle, werden alle aufgeweckt. */
   const sleepAll = () => {
     const live = agents.filter((a) => a.visible);
     const anyAwake = live.some((a) => phaseOf(a.id) === "awake");
@@ -347,8 +411,8 @@ export function startHub(): () => void {
     }
   };
 
-  const addEntry = (agent: Agent, amount: number, note: string) => {
-    const tracker = trackerOf(agent.trackers, "entries");
+  const addEntry = (agent: Agent, mode: Mode, amount: number, note: string) => {
+    const tracker = trackerOf(mode.trackers, "entries");
     if (!tracker) return;
     const value = tracker.kind === "check" ? 1 : amount;
     if (!Number.isFinite(value) || value <= 0 || value > 1e9) return;
@@ -358,9 +422,9 @@ export function startHub(): () => void {
       amount: value,
       note: String(note ?? "").trim().slice(0, 60),
     };
-    const list = [...(entryLogs.get(agent.id) ?? []), entry].slice(-MAX_LOG);
-    entryLogs.set(agent.id, list);
-    saveValue(entriesKey(agent.id), list).catch((e) => console.warn("Speichern fehlgeschlagen:", e));
+    const list = [...(entryLogs.get(mode.id) ?? []), entry].slice(-MAX_LOG);
+    entryLogs.set(mode.id, list);
+    save(entriesKey(mode.id), list);
     const today = list.filter((e) => e.ts >= startOfDay(entry.ts)).length;
     feed(
       agent.id,
@@ -369,36 +433,80 @@ export function startHub(): () => void {
     );
   };
 
+  /** Aendert die Aufgabenliste eines Tiers, speichert und zeigt sie an. */
+  const changeTodos = (agent: Agent, change: (list: Todo[]) => Todo[]) => {
+    const list = change(todos.get(agent.id) ?? []).slice(0, MAX_TODOS);
+    todos.set(agent.id, list);
+    save(todosKey(agent.id), list);
+    sendState(agent);
+  };
+
+  const loadModeData = async (mode: Mode) => {
+    if (entryLogs.has(mode.id)) return;
+    const store = await getStore();
+    entryLogs.set(mode.id, (await store.get<Entry[]>(entriesKey(mode.id))) ?? []);
+    focusLogs.set(mode.id, (await store.get<FocusSession[]>(focusKey(mode.id))) ?? []);
+    const snap = await store.get<Snapshot>(quotesKey(mode.id));
+    if (snap) investSnaps.set(mode.id, snap);
+  };
+
+  const forgetMode = (modeId: string) => {
+    stopFocus(modeId);
+    entryLogs.delete(modeId);
+    focusLogs.delete(modeId);
+    investSnaps.delete(modeId);
+    focusRuns.delete(modeId);
+    deleteModeData(modeId).catch((e) => console.warn("Aufraeumen fehlgeschlagen:", e));
+  };
+
   const applyAgents = async (list: Agent[]) => {
-    const removed = agents.filter((old) => !list.some((a) => a.id === old.id));
+    const previous = agents;
+    const removed = previous.filter((old) => !list.some((a) => a.id === old.id));
     agents = list;
+    const store = await getStore();
     for (const agent of list) {
       if (!hunger.has(agent.id)) {
         const { hunger: h, ...rest } = await loadAgentState(agent.id);
         hunger.set(agent.id, h);
         extra.set(agent.id, rest);
         phase.set(agent.id, rest.sleeping && rest.nest ? "asleep" : "awake");
+        todos.set(agent.id, (await store.get<Todo[]>(todosKey(agent.id))) ?? []);
+        alerts.set(agent.id, (await store.get<Alert[]>(alertsKey(agent.id))) ?? []);
       }
-      if (!entryLogs.has(agent.id)) {
-        const store = await getStore();
-        entryLogs.set(agent.id, (await store.get<Entry[]>(entriesKey(agent.id))) ?? []);
-        const snap = await store.get<Snapshot>(quotesKey(agent.id));
-        if (snap) investSnaps.set(agent.id, snap);
-        focusLogs.set(agent.id, (await store.get<FocusSession[]>(focusKey(agent.id))) ?? []);
-      }
+      for (const mode of agent.modes) await loadModeData(mode);
     }
     if (!alive) return;
+
+    // Entfernte Modi bestehender Tiere
+    for (const agent of list) {
+      const old = previous.find((a) => a.id === agent.id);
+      for (const mode of old?.modes ?? []) {
+        if (!agent.modes.some((m) => m.id === mode.id)) forgetMode(mode.id);
+      }
+      // Der aktive Modus darf nicht auf einen geloeschten zeigen.
+      const active = extra.get(agent.id)?.mode;
+      if (active && !agent.modes.some((m) => m.id === active)) {
+        extra.set(agent.id, { ...(extra.get(agent.id) ?? {}), mode: undefined });
+        persist(agent.id);
+      }
+    }
+
     for (const agent of removed) {
       invoke("close_agent_window", { id: agent.id }).catch(() => {});
+      invoke("close_panel_window", { id: agent.id }).catch(() => {});
+      invoke("close_nest_window", { id: agent.id }).catch(() => {});
+      for (const mode of agent.modes) {
+        stopFocus(mode.id);
+        entryLogs.delete(mode.id);
+        focusLogs.delete(mode.id);
+        investSnaps.delete(mode.id);
+      }
       hunger.delete(agent.id);
       extra.delete(agent.id);
       phase.delete(agent.id);
-      invoke("close_nest_window", { id: agent.id }).catch(() => {});
-      entryLogs.delete(agent.id);
-      investSnaps.delete(agent.id);
-      focusLogs.delete(agent.id);
-      focusRuns.delete(agent.id);
-      deleteAgentData(agent.id).catch((e) => console.warn("Aufraeumen fehlgeschlagen:", e));
+      todos.delete(agent.id);
+      alerts.delete(agent.id);
+      deleteAgentData(agent).catch((e) => console.warn("Aufraeumen fehlgeschlagen:", e));
     }
     for (const agent of list) {
       if (agent.visible) {
@@ -407,8 +515,9 @@ export function startHub(): () => void {
         sendState(agent);
       } else {
         invoke("close_agent_window", { id: agent.id }).catch(() => {});
+        invoke("close_panel_window", { id: agent.id }).catch(() => {});
         invoke("close_nest_window", { id: agent.id }).catch(() => {});
-        stopFocus(agent.id);
+        for (const mode of agent.modes) stopFocus(mode.id);
       }
     }
     syncPolling();
@@ -419,26 +528,63 @@ export function startHub(): () => void {
   const onCommand = (cmd: AgentCommand) => {
     const agent = find(cmd.id);
     if (!agent) return;
+    const mode = activeOf(agent);
     switch (cmd.type) {
       case "ready":
         sendState(agent);
         break;
       case "dev-feed":
-        feed(agent.id, defaultFood(agent), null);
+        feed(agent.id, defaultFood(mode), null);
         break;
       case "dev-hunger":
         setHunger(agent.id, (hunger.get(agent.id) ?? 1) + cmd.delta);
         break;
       case "poll-now":
-        poll(agent.id);
+        poll(mode.id);
         break;
+      case "mode-set": {
+        if (!agent.modes.some((m) => m.id === cmd.mode) || mode.id === cmd.mode) break;
+        extra.set(agent.id, { ...(extra.get(agent.id) ?? {}), mode: cmd.mode });
+        persist(agent.id);
+        sendState(agent);
+        break;
+      }
       case "entry":
-        addEntry(agent, cmd.amount, cmd.note);
+        addEntry(agent, mode, cmd.amount, cmd.note);
         break;
       case "entry-undo": {
-        const list = (entryLogs.get(agent.id) ?? []).slice(0, -1);
-        entryLogs.set(agent.id, list);
-        saveValue(entriesKey(agent.id), list).catch((e) => console.warn("Speichern fehlgeschlagen:", e));
+        const list = (entryLogs.get(mode.id) ?? []).slice(0, -1);
+        entryLogs.set(mode.id, list);
+        save(entriesKey(mode.id), list);
+        sendState(agent);
+        break;
+      }
+      case "todo-add": {
+        const todo = makeTodo(cmd.text);
+        if (todo) changeTodos(agent, (list) => [todo, ...list]);
+        break;
+      }
+      case "todo-toggle": {
+        const before = (todos.get(agent.id) ?? []).find((t) => t.id === cmd.todo);
+        if (!before) break;
+        // Erledigen fuettert einmal je Aufgabe (sonst liesse sich Futter durch Abhaken und Zuruecknehmen erschleichen).
+        const feedNow = !before.done && !before.fed;
+        changeTodos(agent, (list) =>
+          toggleTodo(list, cmd.todo).map((t) => (t.id === cmd.todo && t.done ? { ...t, fed: true } : t)),
+        );
+        if (feedNow) feed(agent.id, TODO_FOOD, `Erledigt: ${before.text.slice(0, 40)}`);
+        break;
+      }
+      case "todo-remove":
+        changeTodos(agent, (list) => list.filter((t) => t.id !== cmd.todo));
+        break;
+      case "todo-clear-done":
+        changeTodos(agent, (list) => list.filter((t) => !t.done));
+        break;
+      case "alert-dismiss": {
+        const list = (alerts.get(agent.id) ?? []).filter((a) => a.id !== cmd.alert);
+        alerts.set(agent.id, list);
+        save(alertsKey(agent.id), list);
         sendState(agent);
         break;
       }
@@ -493,16 +639,16 @@ export function startHub(): () => void {
         break;
       }
       case "focus-toggle":
-        if (focusRuns.has(agent.id)) stopFocus(agent.id);
-        else if (trackerOf(agent.trackers, "focus")) {
-          focusRuns.set(agent.id, { startedAt: Date.now(), credited: 0 });
-          focusClosed.set(agent.id, 0);
-          if ((trackerOf(agent.trackers, "focus")?.blocked ?? []).length > 0) startBlockWatch();
+        if (focusRuns.has(mode.id)) stopFocus(mode.id);
+        else if (trackerOf(mode.trackers, "focus")) {
+          focusRuns.set(mode.id, { startedAt: Date.now(), credited: 0 });
+          focusClosed.set(mode.id, 0);
+          if ((trackerOf(mode.trackers, "focus")?.blocked ?? []).length > 0) startBlockWatch();
         }
         sendState(agent);
         break;
       case "invest-refresh":
-        refreshInvest(agent.id);
+        refreshInvest(mode.id);
         break;
     }
   };
@@ -534,9 +680,9 @@ export function startHub(): () => void {
     lastTick = now;
 
     // Fokus-Timer: pro volle Zeitspanne Futter (auch waehrend der Pause, sonst geht Fokuszeit verloren).
-    for (const agent of agents) {
-      const run = focusRuns.get(agent.id);
-      const tracker = trackerOf(agent.trackers, "focus");
+    for (const { agent, mode } of units()) {
+      const run = focusRuns.get(mode.id);
+      const tracker = trackerOf(mode.trackers, "focus");
       if (!run || !tracker) continue;
       const blocks = Math.floor((now - run.startedAt) / (tracker.blockMinutes * 60_000));
       if (blocks > run.credited) {
@@ -549,7 +695,7 @@ export function startHub(): () => void {
 
     if (paused) return;
     for (const agent of agents) {
-      // Deaktivierte Agenten bleiben satt, bis sie wieder eingeschaltet werden.
+      // Deaktivierte Tiere bleiben satt, bis sie wieder eingeschaltet werden.
       if (!agent.visible || phaseOf(agent.id) !== "awake") continue;
       setHunger(agent.id, (hunger.get(agent.id) ?? 1) - elapsed / (hungerHours * 60 * 60 * 1000));
     }
