@@ -17,8 +17,10 @@ const C = {
 
 interface Pose {
   bodyDy: number;
-  /** Anheben der Beine in Pixeln: vorne rechts, vorne links, hinten rechts, hinten links */
-  legs: [number, number, number, number];
+  /** Anheben der Beine in Pixeln: links, rechts */
+  legs: [number, number];
+  /** Seitliches Wackeln des ganzen Tiers in Pixeln */
+  sway: number;
   eyes: "open" | "closed" | "sad";
   mouthOpen: boolean;
   tear: boolean;
@@ -29,7 +31,8 @@ interface Pose {
 
 const base: Pose = {
   bodyDy: 0,
-  legs: [0, 0, 0, 0],
+  legs: [0, 0],
+  sway: 0,
   eyes: "open",
   mouthOpen: false,
   tear: false,
@@ -42,10 +45,10 @@ const pose = (p: Partial<Pose>): Pose => ({ ...base, ...p });
 export const FRAMES: Record<PetState, Pose[]> = {
   idle: [pose({}), pose({ bodyDy: 1 })],
   walk: [
-    pose({ legs: [3, 0, 0, 3] }),
-    pose({ legs: [0, 0, 0, 0], bodyDy: 1 }),
-    pose({ legs: [0, 3, 3, 0] }),
-    pose({ legs: [0, 0, 0, 0], bodyDy: 1 }),
+    pose({ legs: [3, 0], sway: -1 }),
+    pose({ bodyDy: 1 }),
+    pose({ legs: [0, 3], sway: 1 }),
+    pose({ bodyDy: 1 }),
   ],
   sleep: [
     pose({ bodyDy: 3, eyes: "closed", zzz: 1 }),
@@ -54,9 +57,9 @@ export const FRAMES: Record<PetState, Pose[]> = {
     pose({ bodyDy: 4, eyes: "closed", zzz: 0 }),
   ],
   eat: [
-    pose({ food: { x: 58, y: 24 }, mouthOpen: true }),
-    pose({ food: { x: 58, y: 32 }, mouthOpen: true }),
-    pose({ food: { x: 57, y: 40 } }),
+    pose({ food: { x: 50, y: 24 }, mouthOpen: true }),
+    pose({ food: { x: 45, y: 30 }, mouthOpen: true }),
+    pose({ food: { x: 39, y: 34 } }),
     pose({ bodyDy: 1, eyes: "closed" }),
   ],
   sad: [
@@ -97,68 +100,80 @@ function drawZ(ctx: Ctx, x: number, y: number, s: number) {
   rect(ctx, x, y + s - 1, s, 1, C.zzz);
 }
 
-/** Zeichnet den Nacktmull (blickt nach rechts) auf eine 64x64-Flaeche. */
+/** Zeichnet den Nacktmull in Vorderansicht (schaut den Betrachter an) auf eine 64x64-Flaeche. */
 export function drawPet(ctx: Ctx, state: PetState, frame: number) {
   const frames = FRAMES[state];
   const p = frames[frame % frames.length];
   const dy = p.bodyDy;
 
   ctx.clearRect(0, 0, SIZE, SIZE);
-
-  // Schwanz
-  rect(ctx, 5, 38 + dy, 5, 2, C.outline);
-  rect(ctx, 6, 38 + dy, 3, 1, C.shade);
+  ctx.save();
+  ctx.translate(p.sway, 0);
 
   // Beine (hinter dem Koerper)
-  const legX = [43, 37, 17, 11];
-  const legBase = 49;
+  const legX = [21, 40];
   p.legs.forEach((lift, i) => {
     const h = Math.max(2, 6 - lift - Math.min(dy, 2));
-    const y = legBase + dy - 1 + lift;
+    const y = 55 + dy + lift;
     rect(ctx, legX[i], y, 4, h, C.outline);
     rect(ctx, legX[i] + 1, y, 2, h - 1, C.skin);
   });
 
   // Koerper
-  ellipse(ctx, 30, 38 + dy, 22, 13, C.outline);
-  ellipse(ctx, 30, 38 + dy, 20, 11, C.skin);
+  ellipse(ctx, 32, 41 + dy, 19, 17, C.outline);
+  ellipse(ctx, 32, 41 + dy, 17, 15, C.skin);
   // Falten
-  for (const [x, y] of [[20, 32], [26, 30], [33, 31], [24, 40], [31, 42], [38, 40]]) {
+  for (const [x, y] of [[20, 40], [26, 46], [38, 46], [41, 40], [30, 50], [24, 36], [37, 36]]) {
     rect(ctx, x, y + dy, 3, 1, C.shade);
+  }
+  // Haendchen
+  for (const x of [17, 44]) {
+    rect(ctx, x, 44 + dy, 3, 4, C.outline);
+    rect(ctx, x, 44 + dy, 2, 3, C.skin);
   }
 
   // Kopf
-  ellipse(ctx, 47, 37 + dy, 10, 9, C.outline);
-  ellipse(ctx, 47, 37 + dy, 8, 7, C.skin);
-  rect(ctx, 41, 30 + dy, 2, 2, C.shade); // Ohr
+  ellipse(ctx, 32, 28 + dy, 13, 11, C.outline);
+  ellipse(ctx, 32, 28 + dy, 11, 9, C.skin);
+  rect(ctx, 20, 27 + dy, 2, 3, C.shade); // Ohren
+  rect(ctx, 42, 27 + dy, 2, 3, C.shade);
+  rect(ctx, 28, 30 + dy, 8, 4, C.shade); // Schnauze
+  rect(ctx, 30, 29 + dy, 4, 2, C.outline); // Nase
 
   // Mund und Zaehne
   if (p.mouthOpen) {
-    rect(ctx, 52, 41 + dy, 6, 5, C.mouth);
-    rect(ctx, 54, 40 + dy, 2, 3, C.teeth);
-    rect(ctx, 56, 40 + dy, 2, 3, C.teeth);
+    rect(ctx, 28, 33 + dy, 8, 6, C.mouth);
+    rect(ctx, 29, 33 + dy, 3, 3, C.teeth);
+    rect(ctx, 32, 33 + dy, 3, 3, C.teeth);
   } else {
-    rect(ctx, 54, 41 + dy, 2, 4, C.teeth);
-    rect(ctx, 56, 41 + dy, 2, 4, C.teeth);
-    rect(ctx, 54, 45 + dy, 4, 1, C.outline);
+    rect(ctx, 29, 34 + dy, 3, 4, C.teeth);
+    rect(ctx, 32, 34 + dy, 3, 4, C.teeth);
+    rect(ctx, 28, 38 + dy, 8, 1, C.outline);
   }
 
-  // Auge
+  // Augen
   if (p.eyes === "open") {
-    rect(ctx, 51, 33 + dy, 2, 2, C.eye);
+    rect(ctx, 25, 24 + dy, 2, 2, C.eye);
+    rect(ctx, 37, 24 + dy, 2, 2, C.eye);
   } else if (p.eyes === "closed") {
-    rect(ctx, 50, 34 + dy, 4, 1, C.eye);
+    rect(ctx, 24, 25 + dy, 4, 1, C.eye);
+    rect(ctx, 36, 25 + dy, 4, 1, C.eye);
   } else {
-    rect(ctx, 51, 34 + dy, 2, 2, C.eye);
-    rect(ctx, 49, 32 + dy, 2, 1, C.outline);
-    rect(ctx, 51, 31 + dy, 3, 1, C.outline);
+    rect(ctx, 25, 25 + dy, 2, 2, C.eye);
+    rect(ctx, 37, 25 + dy, 2, 2, C.eye);
+    rect(ctx, 24, 23 + dy, 2, 1, C.outline);
+    rect(ctx, 26, 22 + dy, 2, 1, C.outline);
+    rect(ctx, 38, 23 + dy, 2, 1, C.outline);
+    rect(ctx, 36, 22 + dy, 2, 1, C.outline);
   }
-  if (p.tear) rect(ctx, 53, 36 + dy, 1, 3, C.tear);
+  if (p.tear) rect(ctx, 25, 28 + dy, 1, 3, C.tear);
+
+  ctx.restore();
 
   // Schlafen
-  if (p.zzz >= 1) drawZ(ctx, 50, 22, 4);
-  if (p.zzz >= 2) drawZ(ctx, 55, 14, 5);
-  if (p.zzz >= 3) drawZ(ctx, 48, 8, 3);
+  if (p.zzz >= 1) drawZ(ctx, 46, 12, 4);
+  if (p.zzz >= 2) drawZ(ctx, 51, 6, 5);
+  if (p.zzz >= 3) drawZ(ctx, 42, 3, 3);
 
   // Futter (ein gruener Commit-Block)
   if (p.food) {
