@@ -34,12 +34,18 @@ eigenem Aussehen und eigener Futterquelle (GitHub-Commits, manuelle Eintraege, F
 - Tracker-Daten der Eintrags-Tracker (Ausgaben, Haekchen): `entries:<agentId>`.
 
 ### Tracker-Schnittstelle
-Gemeinsamer Vertrag in `src/trackers/`: jeder Tracker liefert Futter-Ereignisse `{ amount, label }`.
-- `poll(config, state)` fuer abfragende Tracker (GitHub): gibt neue Ereignisse und neuen Tracker-Zustand zurueck.
-- `entry(config, input)` fuer manuelle Tracker: ein Eintrag ergibt ein Ereignis.
-- `summary(config, state)` liefert die Anzeige fuers Panel (z. B. "3 Commits heute", "Ausgaben 84 von 150 CHF").
-- Neue Tracker = eine Datei plus Eintrag in einer Liste.
-- Der Hub rechnet Ereignisse in Hunger-Anteile um (Futterwert pro Tracker einstellbar).
+Typen, Standardwerte und die Berechnung der Panel-Anzeige liegen in `src/trackers.ts`; alle Daten schreibt nur der Hub.
+- **Abfragende Tracker** (GitHub): Vertrag `PollPlugin` in `src/trackerPlugins.ts` (`ready`, `intervalMs`, `poll` gibt ein Futter-Ereignis `{ amount, text }` oder null zurueck).
+  Der Hub fragt pro Agent und Tracker nach und startet die Abfrage nur neu, wenn sich die Einstellungen aendern.
+- **Eingabe-Tracker:**
+  - `entries`: manuelle Eintraege, entweder Ausgaben mit Wochenbudget (Montag bis Sonntag) oder Haken. Gespeichert unter `entries:<agentId>`,
+    jeder Eintrag gibt Futter (einstellbar). "Letzten Eintrag zuruecknehmen" loescht den Eintrag, das Futter bleibt.
+  - `focus`: Fokus-Timer. Start und Stopp im Panel, pro volle Zeitspanne (15 bis 60 Min) Futter; Sitzungen unter `focus:<agentId>`.
+    Ein laufender Timer ueberlebt keinen Neustart der App und stoppt, wenn der Agent deaktiviert wird.
+- **Anzeige:** Der Hub schickt mit dem Zustand eine fertig berechnete Sicht (`TrackerViews`) ans Tierfenster; das Panel zeigt sie an.
+  Das Whiteboard des Finanz-Agenten faerbt den Verlauf gruen (unter Budget) oder rot (darueber).
+- Neuer Tracker = Typ und Standardwerte in `trackers.ts`, Anzeige im Panel, Konfiguration in der Verwaltung, bei Abfragen ein `PollPlugin`.
+- Rollen-Vorlagen (`src/roles.ts`) legen die Start-Tracker fest: Informatiker GitHub, Finanzen Ausgaben, Lernen Fokus-Timer, Fitness und Gewohnheiten Haken.
 
 ### Sprites
 - Gemeinsames Pose-System bleibt (Hub, Beine, Augen, Mund, Traene, Zzz, Futter).
@@ -84,7 +90,7 @@ Hunger und GitHub-Zustand wandern in die neuen Schluessel. Die alten Schluessel 
 6. Agenten-Verwaltung: anlegen, bearbeiten, deaktivieren (bleibt im Tray-Menue), loeschen, Name, Art und Rolle waehlen  (im Test)
 7. Sprite-System: 7 Arten (Vierbeiner als Daten, Vogel und Schlange eigene Zeichner) und 6 Rollen mit Accessoires  (im Test)
 8. Hauptfenster als Startseite der App: alle Tiere als Karten mit Schalter, "Neues Tier", "Bearbeiten"  (im Test)
-9. Tracker-System: GitHub portiert, manuelles Eintragen, Fokus-Timer; Finanz-Whiteboard und Budget
+9. Tracker-System: GitHub portiert, manuelles Eintragen (Ausgaben mit Wochenbudget, Haken), Fokus-Timer; Whiteboard zeigt den Budgetstand  (im Test)
 10. Schlafmodus + Nest, "Alle schlafen" per Tray und Hotkey
 11. Aktionen: gespeicherte Seiten, Terminal-Befehle mit Bestaetigung
 12. Pakete: Tiere und Agenten als Datei exportieren und importieren, mit strenger Pruefung (siehe unten)

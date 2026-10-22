@@ -6,7 +6,7 @@ Das Tier stirbt nie. Wenn es lange nichts zu fressen gibt, wird es nur traurig.
 
 ## Stand
 
-Schritt 6 bis 8 (Agenten-Verwaltung, Tierarten und Rollen, Hauptfenster) sind im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
+Schritt 6 bis 9 (Agenten-Verwaltung, Tierarten und Rollen, Hauptfenster, Tracker) sind im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
 
 Funktioniert:
 - Transparentes, rahmenloses Fenster, immer im Vordergrund, nicht in der Taskleiste
@@ -24,11 +24,12 @@ Funktioniert:
 - Agenten-Verwaltung (Panel, Tray-Menue oder Rechtsklick auf "Einstellungen"): Agent anlegen, Name, Tierart und Rolle waehlen, deaktivieren, loeschen; GitHub-Benutzername, -Token, Intervall und Futter pro Commit je Agent; global Hunger-Dauer und Hotkey
 - Deaktivierte Agenten haben kein Fenster und werden nicht hungriger, bleiben aber im Tray-Menue unter "Agenten" und lassen sich dort wieder einschalten
 - Tierarten: Nacktmull, Katze, Hund, Echse, Schlange, Vogel, Maulwurf (je Vorder- und Seitenansicht, alle Animationen)
+- Futterquellen pro Agent: GitHub-Commits, manuelle Eintraege (Ausgaben mit Wochenbudget oder Haken) und Fokus-Timer; Eintragen und Starten im Panel des Tiers
+- Finanz-Agent: Panel zeigt die Ausgaben dieser Woche gegen das Budget (z. B. 84 von 150 CHF), das Whiteboard am Tier wird gruen unter und rot ueber dem Budget
 - Rollen mit Accessoire: Informatiker (Laptop), Finanzen (Whiteboard mit Graph), Lernen (Buch), Fitness (Hantel), Gewohnheiten (Checkliste), Eigene (Accessoire frei)
 - GitHub-Anbindung: neue Pushes des eingetragenen Benutzers werden abgefragt (Standard alle 10 Minuten); jeder neue Commit bringt 25 % Futter, dazu eine Sprechblase "N Commits heute!"
 
 Noch nicht gebaut:
-- Manuelle Eintraege, Fokus-Timer, Finanz-Budget (Schritt 9)
 - Schlafmodus und Nest (Schritt 10), gespeicherte Seiten und Terminal-Befehle (Schritt 11)
 - Pakete zum Teilen von Tieren und Agenten (Schritt 12, nur Daten, streng geprueft; Online-Marktplatz spaeter)
 - Laufen auf Fensterkanten (Schritt 13)
@@ -93,6 +94,8 @@ src/
   AgentWindow.tsx   Fenster eines Tiers: Klick, Ziehen, Laufen, Panel, Vorschau
   Pet.tsx           Canvas, spielt die Animationen ab
   Home.tsx          Hauptfenster: Tierkarten mit Schalter
+  trackers.ts       Tracker-Typen, Standardwerte, Panel-Anzeige (Wochenbudget, Fokuszeit)
+  trackerPlugins.ts Vertrag fuer abfragende Tracker (GitHub)
   Panel.tsx         Status-Panel
   SettingsWindow.tsx  Agenten-Verwaltung und globale Einstellungen
   roles.ts          Rollen (Vorlagen) mit Accessoire und Standard-Tracker

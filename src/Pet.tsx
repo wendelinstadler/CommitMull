@@ -1,11 +1,13 @@
 import { useEffect, useRef } from "react";
-import { Accessory } from "./accessories";
+import { Accessory, Board } from "./accessories";
 import { drawPet, FRAME_MS, PetState, SIZE } from "./sprites";
 import { Species } from "./species";
 
 interface Props {
   species: Species;
   accessory: Accessory;
+  /** Stand des Wochenbudgets fuer das Whiteboard. */
+  board?: Board;
   state: PetState;
   facing: "left" | "right";
   /** Deckkraft 0..1; wird beim Zeichnen angewendet, damit die Pixel scharf bleiben. */
@@ -22,14 +24,14 @@ function cssSize(target: number) {
   return (SIZE * scale) / dpr;
 }
 
-export function Pet({ species, accessory, state, facing, alpha = 1, size = DEFAULT_CSS_SIZE }: Props) {
+export function Pet({ species, accessory, board, state, facing, alpha = 1, size = DEFAULT_CSS_SIZE }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const ctx = canvasRef.current?.getContext("2d");
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
-    const look = { species, accessory };
+    const look = { species, accessory, board };
 
     // Bei Transparenz erst deckend zeichnen, dann mit Alpha uebertragen, sonst scheinen sich
     // Umriss und Fuellung gegenseitig durch.
@@ -56,7 +58,7 @@ export function Pet({ species, accessory, state, facing, alpha = 1, size = DEFAU
       draw(frame);
     }, FRAME_MS[state]);
     return () => window.clearInterval(id);
-  }, [species, accessory, state, alpha]);
+  }, [species, accessory, board, state, alpha]);
 
   const px = cssSize(size);
   return (

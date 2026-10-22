@@ -1,5 +1,6 @@
 import { Accessory } from "./accessories";
 import { Species } from "./species";
+import { TrackerViews } from "./trackers";
 
 /** Nachrichten zwischen Hub und Agent-Fenstern (Tauri-Events). */
 
@@ -28,6 +29,8 @@ export interface AgentStatePayload {
   roleLabel: string;
   /** 1 = satt, 0 = leer */
   hunger: number;
+  /** Anzeige der Tracker im Panel (Wochenbudget, Fokuszeit ...). */
+  views: TrackerViews;
 }
 
 export interface AgentFedPayload {
@@ -42,4 +45,10 @@ export type AgentCommand =
   /** Dev: Hunger um delta aendern (negativ = hungriger). */
   | { id: string; type: "dev-hunger"; delta: number }
   /** Dev: Tracker sofort abfragen. */
-  | { id: string; type: "poll-now" };
+  | { id: string; type: "poll-now" }
+  /** Manueller Eintrag (Ausgabe mit Betrag, oder Haken mit amount 1). */
+  | { id: string; type: "entry"; amount: number; note: string }
+  /** Letzten Eintrag zuruecknehmen (das Futter bleibt). */
+  | { id: string; type: "entry-undo" }
+  /** Fokus-Timer starten oder beenden. */
+  | { id: string; type: "focus-toggle" };

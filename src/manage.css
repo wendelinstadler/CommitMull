@@ -224,6 +224,12 @@
   margin-left: 22px;
 }
 
+.manage-two {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+}
+
 .manage-footer {
   padding: 8px 24px 16px;
   border-top: 1px solid #e6cfd3;

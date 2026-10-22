@@ -22,7 +22,8 @@ const BUBBLE_MS = 3000;
 const EAT_MS = 1000;
 /** Fensterhoehe ohne und mit Panel (logische Pixel); das Fenster waechst nach oben. */
 const CLOSED_H = 190;
-const OPEN_H = 460;
+/** Hoechste Fensterhoehe mit Panel (logische Pixel), falls das Panel durch viele Eintraege hoch wird. */
+const MAX_H = 900;
 
 interface Props {
   id: string;
@@ -45,6 +46,9 @@ export function AgentWindow({ id }: Props) {
     measure: null,
     active: false,
   });
+  const panelRef = useRef<HTMLDivElement>(null);
+  /** Hoehe des Panels (CSS-Pixel); das Fenster waechst entsprechend mit. */
+  const [panelH, setPanelH] = useState(0);
   const press = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
 
   const hunger = info?.hunger ?? 1;
@@ -104,7 +108,8 @@ export function AgentWindow({ id }: Props) {
     const win = getCurrentWindow();
     (async () => {
       const [pos, size, scale] = await Promise.all([win.outerPosition(), win.outerSize(), win.scaleFactor()]);
-      const height = Math.round((panelOpen ? OPEN_H : CLOSED_H) * scale);
+      const target = panelOpen ? Math.min(MAX_H, CLOSED_H + panelH + 6) : CLOSED_H;
+      const height = Math.round(target * scale);
       if (height === size.height) return;
       const bottom = pos.y + size.height;
       await Promise.all([
@@ -112,7 +117,18 @@ export function AgentWindow({ id }: Props) {
         win.setPosition(new PhysicalPosition(pos.x, Math.max(0, bottom - height))),
       ]);
     })().catch(() => {});
-  }, [panelOpen]);
+  }, [panelOpen, panelH]);
+
+  // Panel-Hoehe beobachten (Eintragsliste, Formular ...).
+  const ready = info !== null;
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el || !panelOpen) return;
+    const observer = new ResizeObserver(() => setPanelH(el.offsetHeight));
+    observer.observe(el);
+    setPanelH(el.offsetHeight);
+    return () => observer.disconnect();
+  }, [panelOpen, ready]);
 
   // Nur im Dev-Modus: Tasten 1-5 schalten Animationen durch, 0 = Automatik,
   // F = Futter geben, H = Hunger um 20 % senken, G = Tracker jetzt abfragen
@@ -120,6 +136,8 @@ export function AgentWindow({ id }: Props) {
     if (!import.meta.env.DEV) return;
     const order: PetState[] = ["idle", "walk", "sleep", "eat", "sad"];
     const onKey = (e: KeyboardEvent) => {
+      // Beim Tippen ins Panel (Betrag, Notiz) keine Dev-Tasten ausloesen.
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const i = Number(e.key) - 1;
       if (i >= 0 && i < order.length) setOverride(order[i]);
       else if (e.key === "0") setOverride(null);
@@ -206,12 +224,17 @@ export function AgentWindow({ id }: Props) {
     >
       {bubble && <div className="bubble">{bubble}</div>}
       {panelOpen && (
+        <div ref={panelRef}>
         <Panel
           name={info.name}
           subtitle={info.roleLabel}
           hunger={hunger}
           mood={mood}
           paused={paused}
+          views={info.views}
+          onEntry={(amount, note) => command({ id, type: "entry", amount, note })}
+          onUndo={() => command({ id, type: "entry-undo" })}
+          onFocusToggle={() => command({ id, type: "focus-toggle" })}
           autostart={autostart}
           onTogglePause={togglePause}
           onToggleAutostart={toggleAutostart}
@@ -219,8 +242,9 @@ export function AgentWindow({ id }: Props) {
           onQuit={() => invoke("quit_app")}
           onFeed={import.meta.env.DEV ? () => command({ id, type: "dev-feed" }) : undefined}
         />
+        </div>
       )}
-      <Pet species={info.species} accessory={info.accessory} state={state} facing={facing} />
+      <Pet species={info.species} accessory={info.accessory} board={info.views.entries?.over ? "over" : "ok"} state={state} facing={facing} />
     </div>
   );
 }

@@ -3,22 +3,11 @@ import { Accessory } from "./accessories";
 import { Role, roleInfo } from "./roles";
 import { Species } from "./species";
 import { getStore, saveValue } from "./store";
+import { entriesKey, focusKey, GithubTracker, Tracker } from "./trackers";
 
 export type { Role } from "./roles";
 export type { Species } from "./species";
-
-export interface GithubTracker {
-  type: "github";
-  user: string;
-  /** Optional; mit Token zaehlen auch private Repos und das Abfrage-Limit steigt. */
-  token: string;
-  pollMinutes: number;
-  /** Futter pro Commit in Prozent. */
-  foodPercent: number;
-}
-
-/** Futterquelle eines Agenten; weitere Typen kommen mit dem Tracker-System dazu. */
-export type Tracker = GithubTracker;
+export type { GithubTracker, Tracker } from "./trackers";
 
 export interface Agent {
   /** Nur Buchstaben, Ziffern, - und _ (wird Teil des Fensternamens). */
@@ -40,13 +29,12 @@ export const accessoryOf = (agent: Agent): Accessory =>
 /** Neuer Agent mit den Vorgaben seiner Rolle. */
 export function createAgent(name: string, species: Species, role: Role): Agent {
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "agent";
-  const github: GithubTracker = { type: "github", user: "", token: "", pollMinutes: 10, foodPercent: 25 };
   return {
     id: `${slug}-${Date.now().toString(36)}`,
     name,
     species,
     role,
-    trackers: roleInfo(role).github ? [github] : [],
+    trackers: roleInfo(role).trackers(),
     visible: true,
   };
 }
@@ -86,6 +74,8 @@ export async function deleteAgentData(id: string) {
   const store = await getStore();
   await store.delete(stateKey(id));
   await store.delete(trackerKey(id, "github"));
+  await store.delete(entriesKey(id));
+  await store.delete(focusKey(id));
   await store.save();
 }
 

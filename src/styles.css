@@ -109,6 +109,78 @@ body,
   background: #d9534f;
 }
 
+.panel-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e6cfd3;
+}
+
+.panel-section .panel-row {
+  flex-wrap: wrap;
+  column-gap: 6px;
+}
+
+.panel strong.over {
+  color: #a3281f;
+}
+
+.panel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.panel-form input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 3px 6px;
+  background: #fff;
+  border: 1px solid #7a3b4a;
+  border-radius: 4px;
+  color: inherit;
+  font: inherit;
+  user-select: auto;
+}
+
+.panel-form button {
+  padding: 4px 6px;
+  background: #fbe3e6;
+  border: 1px solid #7a3b4a;
+  border-radius: 5px;
+  color: #2b1620;
+  font: inherit;
+  cursor: pointer;
+}
+
+.panel-form button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.panel-recent {
+  margin: 8px 0 2px;
+  padding: 0 0 0 14px;
+  color: #6b4a52;
+  font-size: 11px;
+}
+
+.panel-recent li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-link {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: #7a3b4a;
+  font: 11px "Segoe UI", sans-serif;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .panel-buttons {
   display: flex;
   flex-direction: column;

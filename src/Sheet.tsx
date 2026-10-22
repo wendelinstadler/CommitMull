@@ -35,6 +35,12 @@ export function Sheet() {
                 ))}
               </div>
             ))}
+            <div className="sheet-row">
+              <b>Whiteboard, ueber Budget</b>
+              {(["idle", "walk", "sleep", "eat"] as PetState[]).map((st) => (
+                <Pet key={st} species={s.id} accessory="whiteboard" board="over" state={st} facing="right" size={96} />
+              ))}
+            </div>
           </div>
         </div>
       ))}

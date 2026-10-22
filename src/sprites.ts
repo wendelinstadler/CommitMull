@@ -1,4 +1,4 @@
-import { Accessory, drawBackAccessory, drawCarriedAccessory, drawFrontAccessory } from "./accessories";
+import { Accessory, Board, drawBackAccessory, drawCarriedAccessory, drawFrontAccessory } from "./accessories";
 import { Ctx, PetState, Pose, rect, SIZE } from "./draw";
 import { SPECIES, Species, walkBodyDy } from "./species";
 
@@ -9,6 +9,8 @@ export { SIZE } from "./draw";
 export interface Look {
   species: Species;
   accessory: Accessory;
+  /** Stand des Wochenbudgets (nur fuer das Whiteboard). */
+  board?: Board;
 }
 
 const C = {
@@ -76,7 +78,7 @@ export function drawPet(ctx: Ctx, look: Look, state: PetState, frame: number) {
   const frames = FRAMES[state];
   const p = frames[frame % frames.length];
 
-  drawBackAccessory(ctx, look.accessory);
+  drawBackAccessory(ctx, look.accessory, look.board);
   species.front(ctx, p);
   drawFrontAccessory(ctx, look.accessory, species.hold.x, species.hold.y + p.bodyDy);
 

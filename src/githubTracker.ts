@@ -1,6 +1,7 @@
-import { GithubTracker, trackerKey } from "./agents";
+import { trackerKey } from "./agents";
 import { countCommits, fetchPushes } from "./github";
 import { getStore, saveValue } from "./store";
+import { GithubTracker } from "./trackers";
 
 const MAX_SEEN = 500;
 

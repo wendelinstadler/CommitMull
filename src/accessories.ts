@@ -34,10 +34,14 @@ const K = {
   clipDark: "#7a5220",
   ok: "#2ea043",
   ink: "#8a8f9c",
+  budget: "#6b7a99",
 };
 
+/** Stand des Wochenbudgets auf dem Whiteboard: unter dem Budget (gruen) oder darueber (rot). */
+export type Board = "ok" | "over";
+
 /** Zeichnet das Whiteboard hinter dem Tier (Vorderansicht, links neben dem Tier). */
-export function drawBackAccessory(ctx: Ctx, acc: Accessory) {
+export function drawBackAccessory(ctx: Ctx, acc: Accessory, board: Board = "ok") {
   if (acc !== "whiteboard") return;
   rect(ctx, 11, 26, 2, 30, K.frame);
   rect(ctx, 6, 56, 12, 2, K.frame);
@@ -45,13 +49,15 @@ export function drawBackAccessory(ctx: Ctx, acc: Accessory) {
   // Achsen und Verlauf (Ausgaben ueber die Woche)
   rect(ctx, 4, 11, 1, 11, K.axis);
   rect(ctx, 4, 21, 17, 1, K.axis);
-  line(ctx, 5, 19, 9, 16, K.up);
-  line(ctx, 9, 16, 12, 18, K.up);
-  line(ctx, 12, 18, 16, 13, K.up);
-  line(ctx, 16, 13, 20, 11, K.up);
-  rect(ctx, 19, 10, 3, 3, K.up);
-  // Budgetlinie
-  for (let x = 5; x < 21; x += 3) rect(ctx, x, 14, 2, 1, K.down);
+  // Budgetlinie (gestrichelt); der Verlauf endet darunter (ok) oder darueber (ueber Budget)
+  for (let x = 5; x < 21; x += 3) rect(ctx, x, 14, 2, 1, K.budget);
+  const c = board === "over" ? K.down : K.up;
+  const end = board === "over" ? 10 : 17;
+  line(ctx, 5, 19, 9, 17, c);
+  line(ctx, 9, 17, 12, 18, c);
+  line(ctx, 12, 18, 16, board === "over" ? 14 : 18, c);
+  line(ctx, 16, board === "over" ? 14 : 18, 20, end, c);
+  rect(ctx, 19, end - 1, 3, 3, c);
 }
 
 /** Zeichnet Accessoires, die das Tier vor dem Bauch haelt (Vorderansicht). (x, y) = Mitte oben. */

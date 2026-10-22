@@ -9,7 +9,6 @@ import {
   Agent,
   AGENTS_CHANGED,
   createAgent,
-  GithubTracker,
   readAgents,
   Role,
   saveAgents,
@@ -26,6 +25,17 @@ import {
   saveSettings,
 } from "./settings";
 import { Species, SPECIES_LIST } from "./species";
+import {
+  defaultTracker,
+  EntriesTracker,
+  FocusTracker,
+  FOCUS_BLOCK_OPTIONS,
+  GithubTracker,
+  Tracker,
+  TrackerType,
+  TRACKER_LABELS,
+  trackerOf,
+} from "./trackers";
 
 const GENERAL = "general";
 
@@ -39,7 +49,6 @@ function keyName(code: string): string | null {
   return null;
 }
 
-const githubOf = (agent: Agent) => agent.trackers.find((t): t is GithubTracker => t.type === "github");
 
 /**
  * Agenten-Verwaltung: links die Liste, rechts das Formular des gewaehlten Agenten oder die globalen
@@ -91,7 +100,9 @@ export function SettingsWindow() {
   }, []);
 
   const agent = agents.find((a) => a.id === selected);
-  const github = agent && githubOf(agent);
+  const github = agent && trackerOf(agent.trackers, "github");
+  const entries = agent && trackerOf(agent.trackers, "entries");
+  const focus = agent && trackerOf(agent.trackers, "focus");
 
   const updateGlobal = <K extends keyof GlobalSettings>(key: K, value: GlobalSettings[K]) =>
     setGlobals((g) => ({ ...g, [key]: value }));
@@ -99,29 +110,41 @@ export function SettingsWindow() {
   const updateAgent = (patch: Partial<Agent>) =>
     setAgents((list) => list.map((a) => (a.id === selected ? { ...a, ...patch } : a)));
 
-  const updateGithub = <K extends keyof GithubTracker>(key: K, value: GithubTracker[K]) =>
+  const updateTracker = <T extends Tracker>(type: T["type"], patch: Partial<T>) =>
     setAgents((list) =>
       list.map((a) =>
         a.id === selected
-          ? { ...a, trackers: a.trackers.map((t) => (t.type === "github" ? { ...t, [key]: value } : t)) }
+          ? { ...a, trackers: a.trackers.map((t) => (t.type === type ? ({ ...t, ...patch } as Tracker) : t)) }
           : a,
       ),
     );
 
+  const updateGithub = (patch: Partial<GithubTracker>) => updateTracker<GithubTracker>("github", patch);
+  const updateEntries = (patch: Partial<EntriesTracker>) => updateTracker<EntriesTracker>("entries", patch);
+  const updateFocus = (patch: Partial<FocusTracker>) => updateTracker<FocusTracker>("focus", patch);
+
+  /** Wechselt die Art der Eintraege; ein unveraenderter Standardname wird mitgewechselt. */
+  const setEntriesKind = (kind: EntriesTracker["kind"]) => {
+    if (!entries) return;
+    const isDefault = entries.label === "Ausgabe" || entries.label === "Haken";
+    updateEntries({ kind, label: isDefault ? defaultTracker("entries", kind).label : entries.label });
+  };
+
+  /** Rollenwechsel: vorhandene Futterquellen bleiben, die der Vorlage fehlenden kommen dazu. */
   const setRole = (role: Role) => {
-    const wantsGithub = roleInfo(role).github && !agent?.trackers.some((t) => t.type === "github");
-    const template = createAgent("", "cat", role);
+    const have = agent?.trackers ?? [];
+    const add = roleInfo(role).trackers().filter((t) => !have.some((h) => h.type === t.type));
     updateAgent({
       role,
       accessory: role === "custom" ? agent?.accessory ?? "none" : undefined,
-      trackers: wantsGithub ? [...(agent?.trackers ?? []), ...template.trackers] : agent?.trackers,
+      trackers: [...have, ...add],
     });
   };
 
-  const toggleGithub = (on: boolean) => {
+  const toggleTracker = (type: TrackerType, on: boolean) => {
     if (!agent) return;
-    const without = agent.trackers.filter((t) => t.type !== "github");
-    updateAgent({ trackers: on ? [...without, createAgent("", "cat", "dev").trackers[0]] : without });
+    const without = agent.trackers.filter((t) => t.type !== type);
+    updateAgent({ trackers: on ? [...without, defaultTracker(type as "github")] : without });
   };
 
   const addAgent = () => {
@@ -166,10 +189,16 @@ export function SettingsWindow() {
         setMessage({ text: "Jeder Agent braucht einen Namen.", error: true });
         return;
       }
-      const gh = githubOf(a);
+      const gh = trackerOf(a.trackers, "github");
       if (gh && !gh.user.trim()) {
         setSelected(a.id);
         setMessage({ text: `${a.name}: Der GitHub-Benutzername darf nicht leer sein.`, error: true });
+        return;
+      }
+      const en = trackerOf(a.trackers, "entries");
+      if (en && (!en.label.trim() || (en.kind === "expense" && (!(en.budget > 0) || !en.currency.trim())))) {
+        setSelected(a.id);
+        setMessage({ text: `${a.name}: Eintraege brauchen einen Namen, bei Ausgaben auch Budget und Waehrung.`, error: true });
         return;
       }
     }
@@ -181,7 +210,11 @@ export function SettingsWindow() {
         agents.map((a) => ({
           ...a,
           name: a.name.trim(),
-          trackers: a.trackers.map((t) => (t.type === "github" ? { ...t, user: t.user.trim(), token: t.token.trim() } : t)),
+          trackers: a.trackers.map((t) => {
+            if (t.type === "github") return { ...t, user: t.user.trim(), token: t.token.trim() };
+            if (t.type === "entries") return { ...t, label: t.label.trim(), currency: t.currency.trim() };
+            return t;
+          }),
         })),
       );
       await getCurrentWindow().hide();
@@ -294,17 +327,18 @@ export function SettingsWindow() {
                 </label>
               )}
 
-              <h2>Futterquelle</h2>
+              <h2>Futterquellen</h2>
+
               <label className="manage-check">
-                <input type="checkbox" checked={!!github} onChange={(e) => toggleGithub(e.target.checked)} />
-                <span>GitHub-Commits</span>
+                <input type="checkbox" checked={!!github} onChange={(e) => toggleTracker("github", e.target.checked)} />
+                <span>{TRACKER_LABELS.github}</span>
               </label>
 
               {github && (
                 <div className="manage-indent">
                   <label>
                     <span>GitHub-Benutzername</span>
-                    <input value={github.user} onChange={(e) => updateGithub("user", e.target.value)} spellCheck={false} />
+                    <input value={github.user} onChange={(e) => updateGithub({ user: e.target.value })} spellCheck={false} />
                   </label>
 
                   <label>
@@ -312,7 +346,7 @@ export function SettingsWindow() {
                     <input
                       type="password"
                       value={github.token}
-                      onChange={(e) => updateGithub("token", e.target.value)}
+                      onChange={(e) => updateGithub({ token: e.target.value })}
                       placeholder="Leer lassen fuer oeffentliche Commits"
                       autoComplete="off"
                       spellCheck={false}
@@ -325,7 +359,7 @@ export function SettingsWindow() {
 
                   <label>
                     <span>Abfrage-Intervall</span>
-                    <select value={github.pollMinutes} onChange={(e) => updateGithub("pollMinutes", Number(e.target.value))}>
+                    <select value={github.pollMinutes} onChange={(e) => updateGithub({ pollMinutes: Number(e.target.value) })}>
                       {POLL_OPTIONS.map((m) => (
                         <option key={m} value={m}>
                           alle {m} {m === 1 ? "Minute" : "Minuten"}
@@ -339,7 +373,7 @@ export function SettingsWindow() {
 
                   <label>
                     <span>Futter pro Commit</span>
-                    <select value={github.foodPercent} onChange={(e) => updateGithub("foodPercent", Number(e.target.value))}>
+                    <select value={github.foodPercent} onChange={(e) => updateGithub({ foodPercent: Number(e.target.value) })}>
                       {FOOD_OPTIONS.map((p) => (
                         <option key={p} value={p}>
                           {p} %
@@ -349,7 +383,88 @@ export function SettingsWindow() {
                   </label>
                 </div>
               )}
-              {!github && <small>Weitere Futterquellen (manuelle Eintraege, Fokus-Timer) folgen.</small>}
+
+              <label className="manage-check">
+                <input type="checkbox" checked={!!entries} onChange={(e) => toggleTracker("entries", e.target.checked)} />
+                <span>{TRACKER_LABELS.entries}</span>
+              </label>
+
+              {entries && (
+                <div className="manage-indent">
+                  <label>
+                    <span>Art</span>
+                    <select value={entries.kind} onChange={(e) => setEntriesKind(e.target.value as EntriesTracker["kind"])}>
+                      <option value="expense">Ausgaben mit Wochenbudget</option>
+                      <option value="check">Haken (zaehlt pro Tag)</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Name des Eintrags</span>
+                    <input value={entries.label} maxLength={20} onChange={(e) => updateEntries({ label: e.target.value })} />
+                  </label>
+
+                  {entries.kind === "expense" && (
+                    <div className="manage-two">
+                      <label>
+                        <span>Wochenbudget</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={entries.budget}
+                          onChange={(e) => updateEntries({ budget: Number(e.target.value) })}
+                        />
+                      </label>
+                      <label>
+                        <span>Waehrung</span>
+                        <input value={entries.currency} maxLength={4} onChange={(e) => updateEntries({ currency: e.target.value })} />
+                      </label>
+                    </div>
+                  )}
+
+                  <label>
+                    <span>Futter pro Eintrag</span>
+                    <select value={entries.foodPercent} onChange={(e) => updateEntries({ foodPercent: Number(e.target.value) })}>
+                      {FOOD_OPTIONS.map((p) => (
+                        <option key={p} value={p}>
+                          {p} %
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+
+              <label className="manage-check">
+                <input type="checkbox" checked={!!focus} onChange={(e) => toggleTracker("focus", e.target.checked)} />
+                <span>{TRACKER_LABELS.focus}</span>
+              </label>
+
+              {focus && (
+                <div className="manage-indent">
+                  <label>
+                    <span>Futter nach jeweils</span>
+                    <select value={focus.blockMinutes} onChange={(e) => updateFocus({ blockMinutes: Number(e.target.value) })}>
+                      {FOCUS_BLOCK_OPTIONS.map((m) => (
+                        <option key={m} value={m}>
+                          {m} Minuten Fokus
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Futter pro Zeitspanne</span>
+                    <select value={focus.foodPercent} onChange={(e) => updateFocus({ foodPercent: Number(e.target.value) })}>
+                      {FOOD_OPTIONS.map((p) => (
+                        <option key={p} value={p}>
+                          {p} %
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
             </>
           )}
 
