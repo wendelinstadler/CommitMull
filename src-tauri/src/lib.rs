@@ -1,10 +1,18 @@
+use std::sync::Mutex;
+
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, Wry,
+    AppHandle, Emitter, Manager, WindowEvent, Wry,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_store::StoreExt;
+
+const DEFAULT_HOTKEY: &str = "Ctrl+Shift+P";
+
+/// Aktuell registrierter Hotkey zum Ein-/Ausblenden.
+struct Hotkey(Mutex<Option<Shortcut>>);
 
 /// Menue und seine Check-Eintraege, geteilt zwischen Tray-Icon und Rechtsklick am Tier.
 struct PetMenu {
@@ -32,6 +40,56 @@ fn place_bottom_right(app: &AppHandle) {
     let x = area.position.x + area.size.width as i32 - size.width as i32;
     let y = area.position.y + area.size.height as i32 - size.height as i32;
     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+/// Registriert den Hotkey neu. Der alte bleibt aktiv, wenn der neue ungueltig oder belegt ist.
+fn register_hotkey(app: &AppHandle, accelerator: &str) -> Result<(), String> {
+    let shortcut: Shortcut = accelerator
+        .parse()
+        .map_err(|e| format!("Ungueltiger Hotkey: {e}"))?;
+    let state = app.state::<Hotkey>();
+    let mut current = state.0.lock().map_err(|_| "Hotkey-Zustand gesperrt".to_string())?;
+    if *current == Some(shortcut) {
+        return Ok(());
+    }
+    let shortcuts = app.global_shortcut();
+    shortcuts
+        .register(shortcut)
+        .map_err(|e| format!("Hotkey konnte nicht registriert werden: {e}"))?;
+    if let Some(old) = current.take() {
+        let _ = shortcuts.unregister(old);
+    }
+    *current = Some(shortcut);
+    Ok(())
+}
+
+/// Hotkey aus den gespeicherten Einstellungen (state.json), sonst der Standard.
+fn saved_hotkey(app: &AppHandle) -> String {
+    app.store("state.json")
+        .ok()
+        .and_then(|store| store.get("settings"))
+        .and_then(|settings| settings.get("hotkey").and_then(|h| h.as_str().map(String::from)))
+        .unwrap_or_else(|| DEFAULT_HOTKEY.to_string())
+}
+
+#[tauri::command]
+fn set_hotkey(app: AppHandle, hotkey: String) -> Result<(), String> {
+    register_hotkey(&app, &hotkey)
+}
+
+fn show_settings(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        // Das Fenster laedt dabei den gespeicherten Stand neu (verwirft ungespeicherte Eingaben).
+        let _ = app.emit_to("settings", "settings-opened", ());
+        let _ = window.center();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+#[tauri::command]
+fn open_settings(app: AppHandle) {
+    show_settings(&app);
 }
 
 #[tauri::command]
@@ -83,9 +141,7 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
                 let _ = state.autostart.set_checked(!wanted);
             }
         }
-        "settings" => {
-            let _ = app.emit("open-settings", ());
-        }
+        "settings" => show_settings(app),
         "quit" => app.exit(0),
         _ => {}
     }
@@ -110,8 +166,19 @@ pub fn run() {
             set_paused,
             get_autostart,
             set_autostart,
-            quit_app
+            quit_app,
+            set_hotkey,
+            open_settings
         ])
+        // Das Einstellungsfenster wird nur versteckt, damit es sich wieder oeffnen laesst.
+        .on_window_event(|window, event| {
+            if window.label() == "settings" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
         .setup(|app| {
             let toggle = MenuItem::with_id(app, "toggle", "Anzeigen / Ausblenden", true, None::<&str>)?;
@@ -156,9 +223,13 @@ pub fn run() {
                 let _ = ghost.set_ignore_cursor_events(true);
             }
 
-            let hotkey = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyP);
-            if let Err(e) = app.global_shortcut().register(hotkey) {
-                eprintln!("Hotkey Ctrl+Shift+P konnte nicht registriert werden: {e}");
+            app.manage(Hotkey(Mutex::new(None)));
+            let accelerator = saved_hotkey(app.handle());
+            if let Err(e) = register_hotkey(app.handle(), &accelerator) {
+                eprintln!("{e}");
+                if accelerator != DEFAULT_HOTKEY {
+                    let _ = register_hotkey(app.handle(), DEFAULT_HOTKEY);
+                }
             }
 
             Ok(())

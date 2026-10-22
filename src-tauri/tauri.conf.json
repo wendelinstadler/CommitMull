@@ -27,6 +27,18 @@
         "minimizable": false
       },
       {
+        "label": "settings",
+        "title": "CommitMull Einstellungen",
+        "url": "index.html?settings",
+        "width": 420,
+        "height": 600,
+        "center": true,
+        "visible": false,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false
+      },
+      {
         "label": "ghost",
         "title": "CommitMull Vorschau",
         "url": "index.html?ghost",

@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getStore, saveValue } from "./store";
 import { currentMonitor, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 
-/** Dauer, in der der Hunger (aktive, nicht pausierte Zeit) von voll auf leer faellt. */
-export const HUNGER_EMPTY_MS = 8 * 60 * 60 * 1000;
 const TICK_MS = 30_000;
 
 export type Mood = "happy" | "ok" | "sad";
@@ -17,12 +15,15 @@ export function moodOf(hunger: number): Mood {
 
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
 
-export function useHunger(paused: boolean) {
+/** emptyHours: Dauer in aktiver (nicht pausierter) Zeit, in der der Hunger von voll auf leer faellt. */
+export function useHunger(paused: boolean, emptyHours: number) {
   const [hunger, setHunger] = useState(1);
   const hungerRef = useRef(1);
   const pausedRef = useRef(paused);
   const loaded = useRef(false);
   pausedRef.current = paused;
+  const emptyMsRef = useRef(emptyHours * 60 * 60 * 1000);
+  emptyMsRef.current = emptyHours * 60 * 60 * 1000;
 
   const apply = useCallback((next: number) => {
     hungerRef.current = clamp(next);
@@ -50,7 +51,7 @@ export function useHunger(paused: boolean) {
       const elapsed = now - last;
       last = now;
       if (pausedRef.current) return;
-      apply(hungerRef.current - elapsed / HUNGER_EMPTY_MS);
+      apply(hungerRef.current - elapsed / emptyMsRef.current);
       save();
     }, TICK_MS);
 

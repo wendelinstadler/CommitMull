@@ -131,3 +131,87 @@ body,
 .ghost .pet {
   cursor: default;
 }
+
+.settings {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 18px 22px 20px;
+  background: #fffdf5;
+  color: #2b1620;
+  font: 14px/1.4 "Segoe UI", sans-serif;
+  user-select: auto;
+}
+
+.settings h1 {
+  margin: 0 0 14px;
+  font-size: 18px;
+}
+
+.settings label {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.settings label > span {
+  display: block;
+  margin-bottom: 3px;
+  font-weight: 600;
+}
+
+.settings input,
+.settings select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  background: #fff;
+  border: 1px solid #7a3b4a;
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+}
+
+.settings input.hotkey {
+  cursor: pointer;
+}
+
+.settings small {
+  display: block;
+  margin-top: 3px;
+  color: #6b4a52;
+  font-size: 12px;
+}
+
+.settings-message {
+  margin: 0 0 10px;
+  color: #2b6a34;
+}
+
+.settings-message.error {
+  color: #a3281f;
+}
+
+.settings-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-buttons button {
+  padding: 6px 16px;
+  background: #fbe3e6;
+  border: 1px solid #7a3b4a;
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-buttons button.primary {
+  background: #7a3b4a;
+  color: #fff;
+}
+
+.settings-buttons button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

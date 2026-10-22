@@ -6,6 +6,7 @@ import { Pet } from "./Pet";
 import { Panel } from "./Panel";
 import { aimTarget, measureWindow, moodOf, useHunger, useWalker, WindowMeasure } from "./behavior";
 import { useCommits } from "./commits";
+import { DEFAULT_SETTINGS, useSettings } from "./settings";
 import { PetState } from "./sprites";
 
 const DRAG_THRESHOLD = 4;
@@ -14,8 +15,6 @@ const EAT_MS = 1000;
 /** Fensterhoehe ohne und mit Panel (logische Pixel); das Fenster waechst nach oben. */
 const CLOSED_H = 190;
 const OPEN_H = 460;
-/** Futter pro Commit in Hunger-Anteilen (1 = komplett satt). */
-const FOOD_PER_COMMIT = 0.25;
 
 export default function App() {
   const [paused, setPaused] = useState(false);
@@ -32,7 +31,11 @@ export default function App() {
   });
   const press = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
 
-  const { hunger, feed } = useHunger(paused);
+  const settings = useSettings();
+  /** Futter pro Commit in Hunger-Anteilen (1 = komplett satt). */
+  const foodPerCommit = (settings ?? DEFAULT_SETTINGS).foodPercent / 100;
+
+  const { hunger, feed } = useHunger(paused, (settings ?? DEFAULT_SETTINGS).hungerHours);
   const mood = moodOf(hunger);
   const [eating, setEating] = useState(false);
   const eatTimer = useRef<number | undefined>(undefined);
@@ -60,9 +63,9 @@ export default function App() {
 
   // Neue GitHub-Commits sind Futter
   const { pollNow } = useCommits((fresh, today) => {
-    eat(fresh * FOOD_PER_COMMIT);
+    eat(fresh * foodPerCommit);
     say(`${today} ${today === 1 ? "Commit" : "Commits"} heute!`);
-  });
+  }, settings);
 
   useEffect(() => {
     const unlisten = listen<boolean>("pause-changed", (e) => setPaused(e.payload));
@@ -93,6 +96,8 @@ export default function App() {
   eatRef.current = eat;
   const feedRef = useRef(feed);
   feedRef.current = feed;
+  const foodRef = useRef(foodPerCommit);
+  foodRef.current = foodPerCommit;
   const pollRef = useRef(pollNow);
   pollRef.current = pollNow;
   useEffect(() => {
@@ -102,7 +107,7 @@ export default function App() {
       const i = Number(e.key) - 1;
       if (i >= 0 && i < order.length) setOverride(order[i]);
       else if (e.key === "0") setOverride(null);
-      else if (e.key === "f") eatRef.current(FOOD_PER_COMMIT);
+      else if (e.key === "f") eatRef.current(foodRef.current);
       else if (e.key === "h") feedRef.current(-0.2);
       else if (e.key === "g") pollRef.current();
     };
@@ -167,7 +172,7 @@ export default function App() {
   const toggleAutostart = () => invoke<boolean>("set_autostart", { enabled: !autostart }).then(setAutostart);
   const openSettings = () => {
     setPanelOpen(false);
-    say("Einstellungen kommen noch.");
+    invoke("open_settings");
   };
 
   return (
@@ -190,7 +195,7 @@ export default function App() {
           onToggleAutostart={toggleAutostart}
           onSettings={openSettings}
           onQuit={() => invoke("quit_app")}
-          onFeed={import.meta.env.DEV ? () => eat(FOOD_PER_COMMIT) : undefined}
+          onFeed={import.meta.env.DEV ? () => eat(foodPerCommit) : undefined}
         />
       )}
       <Pet state={state} facing={facing} />

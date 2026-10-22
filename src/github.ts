@@ -1,7 +1,5 @@
 const API = "https://api.github.com";
 
-export const GITHUB_USER = "wendelinstadler";
-
 export interface Push {
   id: string;
   createdAt: string;
@@ -31,9 +29,9 @@ function headers(token?: string): HeadersInit {
  * Letzte Pushes des Nutzers. Ohne Token nur oeffentliche, mit Token auch private.
  * cache: "no-cache" laesst den Browser per ETag nachfragen; ein 304 zaehlt nicht gegen das Limit.
  */
-export async function fetchPushes(token?: string): Promise<Push[]> {
+export async function fetchPushes(user: string, token?: string): Promise<Push[]> {
   const path = token ? "events" : "events/public";
-  const res = await fetch(`${API}/users/${GITHUB_USER}/${path}?per_page=100`, {
+  const res = await fetch(`${API}/users/${encodeURIComponent(user)}/${path}?per_page=100`, {
     headers: headers(token),
     cache: "no-cache",
   });

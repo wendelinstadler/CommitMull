@@ -6,7 +6,7 @@ Das Tier stirbt nie. Wenn es lange nichts zu fressen gibt, wird es nur traurig.
 
 ## Stand
 
-Schritt 3 von 6 ist fertig (siehe [PLAN.md](PLAN.md)).
+Schritt 4 ist im Test (siehe [PLAN.md](PLAN.md), dort steht auch die geplante Erweiterung zu mehreren Agenten).
 
 Funktioniert:
 - Transparentes, rahmenloses Fenster, immer im Vordergrund, nicht in der Taskleiste
@@ -19,10 +19,10 @@ Funktioniert:
 - Tray-Icon mit Menue (dasselbe Menue per Rechtsklick auf das Tier)
 - Globaler Hotkey `Ctrl+Shift+P` blendet das Tier ein und aus
 - Autostart mit Windows (schaltbar)
+- Einstellungsfenster (Panel, Tray-Menue oder Rechtsklick): GitHub-Benutzername und -Token, Abfrage-Intervall, Futter pro Commit, Hunger-Dauer, Hotkey; Aenderungen gelten sofort
 - GitHub-Anbindung: alle 10 Minuten werden neue Pushes von `wendelinstadler` abgefragt; jeder neue Commit bringt 25 % Futter, dazu eine Sprechblase "N Commits heute!"
 
 Noch nicht gebaut:
-- Einstellungsfenster (Schritt 4)
 - Laufen auf Fensterkanten (Schritt 5)
 - Installer und Release (Schritt 6)
 
@@ -77,6 +77,8 @@ src/
   App.tsx        Fenster-Logik: Klick, Ziehen, Zustand, Panel
   Pet.tsx        Canvas, spielt die Animationen ab
   Panel.tsx      Status-Panel
+  SettingsWindow.tsx  Einstellungsfenster
+  settings.ts    Einstellungen laden, speichern, Standardwerte
   behavior.ts    Hunger, Stimmung, Laufen
   commits.ts     GitHub abfragen, neue Commits erkennen
   github.ts      GitHub-API (Events, Vergleich)
